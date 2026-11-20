@@ -6,17 +6,30 @@ uv run validar.py comparar --todas            roda o contador automático e most
 uv run validar.py referencia                  conta os clipes com detector maior (sem pessoa)
 uv run validar.py comparar --todas --contra referencia   compara com essa referência
 uv run validar.py limpar                      apaga os vídeos já contados
+uv run validar.py enquadramento 000026 A clipe.mp4 ...   miniaturas de um enquadramento
 """
 
 import argparse
 import csv
+import json
 import shutil
 import subprocess
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from coletor import CAMERAS, SENTIDOS, VEICULOS, abrir_clipe, contar, cruzou, rastrear
+import coletor
+from coletor import (
+    CAMERAS,
+    SENTIDOS,
+    VEICULOS,
+    abrir_clipe,
+    contar,
+    cruzou,
+    descritor,
+    linha_do_clipe,
+    rastrear,
+)
 
 PASTA = Path("validacao")
 CLASSES = tuple(VEICULOS.values())
@@ -308,7 +321,7 @@ def eventos_auto(video, camera, modelo, passo, diag=None, **detector):
     Se diag for um caminho, grava vídeo com caixas, IDs e contagem acumulada."""
     import cv2
 
-    linha = CAMERAS[camera]["linha"]
+    linha, _, _ = linha_do_clipe(camera, video)
     a, b = (tuple(map(int, p)) for p in linha)
     saida = _Video(diag, _fps(video) / passo) if diag else None
     cruzamentos, quadro = {}, 0  # id da trajetória → (quadro, sentido) do 1º cruzamento
@@ -387,7 +400,7 @@ def contar_manual(_args):
         cv2.setWindowTitle(JANELA, f"{JANELA}: clipe {n} de {len(pendentes)}")
         eventos = sessao(
             quadros,
-            CAMERAS[linha["camera"]]["linha"],
+            linha_do_clipe(linha["camera"], PASTA / f"{linha['arquivo']}.mp4")[0],
             fps,
             ler_tecla,
             lambda img: cv2.imshow(JANELA, img),
@@ -454,7 +467,12 @@ def _rodar(args, detector, manuais, eventos):
         _gravar(
             PASTA / f"resultado_{sufixo}.csv",
             campos,
-            [x | parametros | {"linha": CAMERAS[x["camera"]]["linha"]} for x in linhas],
+            [
+                x
+                | parametros
+                | {"linha": linha_do_clipe(x["camera"], PASTA / f"{x['arquivo']}.mp4")[0]}
+                for x in linhas
+            ],
         )
         _gravar(
             PASTA / f"divergencias_{sufixo}.csv",
@@ -550,6 +568,28 @@ def referencia(args):
         print(nome, len(eventos[nome]), "veículos", flush=True)
 
 
+def enquadramento(args):
+    """Acrescenta miniaturas (descritores) de clipes ao enquadramento `nome` da câmera em
+    enquadramentos.json. Cada clipe contribui com o quadro do meio e o primeiro."""
+    import cv2
+
+    caminho = coletor.ENQUADRAMENTOS
+    todas = json.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else {}
+    lista = todas.setdefault(args.camera, {}).setdefault(args.nome, [])
+    for arquivo in args.clipes:
+        cap = cv2.VideoCapture(arquivo)
+        n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        for i in (0, n // 2):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+            ok, quadro = cap.read()
+            if ok:
+                lista.append([int(round(x * 10)) for x in descritor(quadro)])
+        cap.release()
+    caminho.write_text(json.dumps(todas, separators=(",", ":")), encoding="utf-8")
+    coletor._referencias.cache_clear()
+    print(args.camera, args.nome, len(lista), "miniaturas em", caminho.name)
+
+
 def limpar(_args):
     """Apaga os vídeos dos clipes já contados; os números ficam nos CSV."""
     for linha in filter(contada, ler_manual()):
@@ -583,6 +623,11 @@ def main():
     r.add_argument("--conf", type=float)
     r.add_argument("--tracker")
     r.set_defaults(func=referencia)
+    e = sub.add_parser("enquadramento", help="guarda miniaturas de um enquadramento da câmera")
+    e.add_argument("camera")
+    e.add_argument("nome", help="ex.: A (duas pistas) ou B (só a pista que se afasta)")
+    e.add_argument("clipes", nargs="+", help="vídeos .mp4 desse enquadramento")
+    e.set_defaults(func=enquadramento)
     sub.add_parser("limpar", help="apaga vídeos já contados").set_defaults(func=limpar)
     args = ap.parse_args()
     args.func(args)

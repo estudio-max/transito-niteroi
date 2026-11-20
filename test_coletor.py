@@ -113,3 +113,87 @@ def test_banco_nao_duplica_clipe():
     assert db.execute(
         "SELECT count(*), sum(carro_desce), sum(moto_sobe) FROM clipes"
     ).fetchone() == (1, 1, 0)
+
+
+# ---------- enquadramento da câmera ----------
+
+
+def _vista(semente):
+    """Quadro 800x450 sintético com estrutura (faixas e blocos) própria de cada vista."""
+    import numpy as np
+
+    rng = np.random.default_rng(semente)
+    quadro = np.zeros((450, 800, 3), np.uint8)
+    for _ in range(14):
+        x, y = int(rng.integers(0, 700)), int(rng.integers(0, 380))
+        quadro[y : y + int(rng.integers(20, 90)), x : x + int(rng.integers(20, 160))] = int(
+            rng.integers(40, 255)
+        )
+    return quadro
+
+
+def _ruido(quadro, brilho=0, sigma=6):
+    import numpy as np
+
+    r = np.random.default_rng(7).normal(0, sigma, quadro.shape)
+    return np.clip(quadro.astype(float) + r + brilho, 0, 255).astype(np.uint8)
+
+
+def _refs():
+    from coletor import descritor
+
+    return {
+        "000026": {
+            nome: [[int(round(x * 10)) for x in descritor(q)] for q in quadros]
+            for nome, quadros in {
+                "A": [_vista(1), _ruido(_vista(1), 5)],
+                "B": [_vista(2), _ruido(_vista(2), 5)],
+            }.items()
+        }
+    }
+
+
+def test_enquadramento_reconhece_a_vista_mesmo_mais_clara_e_com_ruido():
+    from coletor import enquadramento
+
+    refs = _refs()
+    assert enquadramento("000026", _ruido(_vista(1), 25, 10), refs)[0] == "A"
+    nome, sim = enquadramento("000026", _ruido(_vista(2), -20, 10), refs)
+    assert nome == "B" and sim > 0.8
+    assert enquadramento("000026", _vista(99), refs)[1] < 0.65  # vista desconhecida
+
+
+def test_linha_do_clipe_usa_a_linha_do_enquadramento(tmp_path):
+    import cv2
+
+    from coletor import CAMERAS, linha_do_clipe
+
+    def clipe(quadro):
+        caminho = tmp_path / "c.mp4"
+        w = cv2.VideoWriter(str(caminho), cv2.VideoWriter_fourcc(*"mp4v"), 10, (800, 450))
+        for _ in range(6):
+            w.write(quadro)
+        w.release()
+        return caminho
+
+    refs = _refs()
+    cfg = CAMERAS["000026"]["enquadramentos"]
+    assert linha_do_clipe("000026", clipe(_vista(1)), refs)[:2] == (cfg["A"], "A")
+    assert linha_do_clipe("000026", clipe(_vista(2)), refs)[:2] == (cfg["B"], "B")
+
+
+def test_camera_de_uma_vista_ou_clipe_ilegivel_usa_a_linha_padrao(tmp_path):
+    from coletor import CAMERAS, linha_do_clipe
+
+    assert linha_do_clipe("000018", tmp_path / "x.mp4") == (CAMERAS["000018"]["linha"], None, None)
+    padrao = CAMERAS["000026"]["linha"]
+    assert linha_do_clipe("000026", tmp_path / "nao_existe.mp4", _refs()) == (padrao, None, None)
+    assert linha_do_clipe("000026", tmp_path / "nao_existe.mp4", {}) == (padrao, None, None)
+
+
+def test_enquadramentos_guardados_cobrem_as_duas_vistas_da_000026():
+    from coletor import CAMERAS, _referencias
+
+    refs = _referencias()["000026"]
+    assert set(refs) == set(CAMERAS["000026"]["enquadramentos"]) == {"A", "B"}
+    assert all(len(v) >= 4 and len(v[0]) == 1152 for v in refs.values())

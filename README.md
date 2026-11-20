@@ -130,6 +130,8 @@ Isso diz quanto a contagem do coletor muda com mais modelo e resolução (onde e
 uv run validar.py limpar
 ```
 
+Se uma câmera mudar de enquadramento (a 000026 alterna entre dois), guarde miniaturas do novo enquadramento com `uv run validar.py enquadramento <câmera> <nome> <clipes.mp4>` e acrescente a linha dele em `CAMERAS` (`enquadramentos`, em `coletor.py`). O log do coletor avisa `ENQUADRAMENTO INCERTO` quando um clipe não se parece com nenhum.
+
 ## Verificações (rodar antes de qualquer commit)
 
 ```bash

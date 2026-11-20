@@ -20,6 +20,7 @@ flowchart LR
 | `coletar` | Lê o `Last-Modified`, pula clipe repetido sem baixar o corpo, baixa, chama as demais |
 | `rastrear` | Detector + rastreador (Ultralytics); devolve trajetórias, ocupação média e duração |
 | `cruzou` / `contar` | Geometria pura: quem cruzou a linha, em que sentido, uma vez por trajetória |
+| `linha_do_clipe` / `enquadramento` / `descritor` | Câmera que alterna entre enquadramentos (a 000026): reconhece o enquadramento do clipe por uma miniatura 32x18 com bordas, comparada às de `enquadramentos.json`, e devolve a linha dele; câmera de um enquadramento só usa `linha` |
 | `abrir_banco` / `ja_processado` / `gravar` | Persistência |
 | `main` | Laço, argumentos, tolerância a falha por câmera |
 

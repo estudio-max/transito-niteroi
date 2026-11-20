@@ -7,6 +7,8 @@ Uso:  uv run coletor.py            (laço, a cada 60 s)
 """
 
 import argparse
+import functools
+import json
 import sqlite3
 import tempfile
 import time
@@ -34,11 +36,16 @@ SENTIDOS = ("desce", "sobe")  # na imagem, com a linha A→B da esquerda p/ dire
 CAMERAS = {
     "000026": {
         "nome": "Jansen sent. Ponte",
-        # A câmera gira: até 13/11 via só a pista que se afasta, com a linha (290, 300)-(590,
-        # 300); de 16/11 em diante mostra as duas pistas com canteiro, e aquela linha cortava
-        # só um pedaço de cada sentido (vindo para a câmera, ~1/3). Linha nova em 20/11/2026
-        # atravessa as duas pistas inteiras. Se a câmera girar de novo, recalibrar.
-        "linha": ((95, 300), (640, 300)),
+        # A câmera alterna entre dois enquadramentos ao longo do dia e cada um pede uma linha:
+        # A mostra as duas pistas com canteiro (visto de 16/11 à noite e de madrugada); B só a
+        # pista que se afasta, com a outra escondida atrás das árvores (13/11 e hoje de dia).
+        # `linha_do_clipe` reconhece o enquadramento de cada clipe pelas miniaturas guardadas
+        # em enquadramentos.json; "linha" é o padrão quando o clipe não pôde ser lido.
+        "enquadramentos": {
+            "A": ((95, 300), (640, 300)),
+            "B": ((265, 300), (645, 300)),
+        },
+        "linha": ((265, 300), (645, 300)),
         # desce = vem para a câmera, sobe = se afasta; qual é o sentido Ponte não foi conferido
         "sentido_confirmado": False,
     },
@@ -113,6 +120,71 @@ ROTULO_SENTIDO = {"desce": "da ponte para Icaraí", "sobe": "para a ponte"}
 
 COLUNAS = [f"{v}_{s}" for v in VEICULOS.values() for s in SENTIDOS]
 PARAMETROS = ["modelo", "passo", "linha", "detector"]
+
+
+ENQUADRAMENTOS = Path(__file__).with_name("enquadramentos.json")
+# Abaixo disso o quadro não se parece com nenhum enquadramento guardado (o certo fica em
+# 0,78 a 0,98; o errado, em 0,45 a 0,57; outra câmera, abaixo de 0,45).
+SIMILARIDADE_MIN = 0.65
+
+
+def descritor(quadro):
+    """Miniatura 32x18 em cinza e seu mapa de bordas, cada um normalizado, num vetor só.
+    São 1.152 números que não mostram pessoa, placa nem veículo; a miniatura sozinha
+    separa o dia da noite, as bordas separam os enquadramentos."""
+    import cv2
+    import numpy as np
+
+    cinza = cv2.cvtColor(quadro, cv2.COLOR_BGR2GRAY)
+    mini = cv2.resize(cinza, (32, 18), interpolation=cv2.INTER_AREA).astype(np.float32)
+    g = cv2.GaussianBlur(cinza, (0, 0), 3)
+    borda = np.hypot(cv2.Sobel(g, cv2.CV_32F, 1, 0), cv2.Sobel(g, cv2.CV_32F, 0, 1))
+    borda = cv2.resize(borda, (32, 18), interpolation=cv2.INTER_AREA)
+    v = np.concatenate([((m - m.mean()) / (m.std() + 1e-6)).ravel() for m in (mini, borda)])
+    return v / (v.std() + 1e-6)
+
+
+@functools.lru_cache(maxsize=1)
+def _referencias():
+    """{camera: {enquadramento: [descritor, ...]}}, guardados com 1 casa decimal (×10)."""
+    if not ENQUADRAMENTOS.exists():
+        return {}
+    return json.loads(ENQUADRAMENTOS.read_text(encoding="utf-8"))
+
+
+def enquadramento(camera, quadro, referencias=None):
+    """(nome, similaridade) do enquadramento da câmera mais parecido com o quadro."""
+    import numpy as np
+
+    refs = (referencias if referencias is not None else _referencias())[camera]
+    d = descritor(quadro)
+    sims = {
+        nome: max(float((d * np.array(r) / 10).mean()) for r in lista)
+        for nome, lista in refs.items()
+    }
+    nome = max(sims, key=sims.get)
+    return nome, sims[nome]
+
+
+def linha_do_clipe(camera, video, referencias=None):
+    """(linha, enquadramento, similaridade) do clipe. Câmera de um enquadramento só, ou
+    clipe ilegível, devolve a linha padrão e enquadramento None."""
+    import cv2
+
+    cfg = CAMERAS[camera]
+    if "enquadramentos" not in cfg:
+        return cfg["linha"], None, None
+    cap = cv2.VideoCapture(str(video))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) // 2)
+    ok, quadro = cap.read()
+    cap.release()
+    try:
+        if not ok:
+            raise KeyError(camera)
+        nome, sim = enquadramento(camera, quadro, referencias)
+    except KeyError:  # sem quadro, ou sem miniaturas guardadas para a câmera
+        return cfg["linha"], None, None
+    return cfg["enquadramentos"][nome], nome, sim
 
 
 def _lado(p, a, b):
@@ -324,7 +396,11 @@ def coletar(db, modelo, camera, passo, nome_modelo="", detector=None):
         trajetorias, ocupacao, duracao = rastrear(
             video, modelo, passo, ao_quadro, **(detector or {})
         )
-    linha = CAMERAS[camera]["linha"]
+        linha, vista, sim = linha_do_clipe(camera, video)
+    if sim is not None and sim < SIMILARIDADE_MIN:
+        # ponytail: usa o enquadramento mais parecido mesmo assim; um terceiro enquadramento
+        # entra com `uv run validar.py enquadramento` e uma linha nova em CAMERAS
+        print(camera, f"ENQUADRAMENTO INCERTO ({vista}, similaridade {sim:.2f})", flush=True)
     contagem = contar(trajetorias, linha)
     parametros = {
         "modelo": nome_modelo,
@@ -340,7 +416,8 @@ def coletar(db, modelo, camera, passo, nome_modelo="", detector=None):
     novos = incidentes.registrar(db, camera, clipe_utc, achados, quadros)
     for i in novos:
         print(camera, "INCIDENTE", i["tipo"], i["confianca"], i["descricao"], flush=True)
-    return clipe_utc, round(ocupacao, 1), dict(contagem), f"{len(achados)} parados"
+    parados = f"{len(achados)} parados" + (f", enquadramento {vista}" if vista else "")
+    return clipe_utc, round(ocupacao, 1), dict(contagem), parados
 
 
 def ler_janelas(texto):
