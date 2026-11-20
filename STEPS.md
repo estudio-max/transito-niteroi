@@ -167,7 +167,7 @@ Atualizado em 19/11/2026.
   | yolo11s 960, rastreador padrão | -26,2% | -7,0% | +13,5% |
   | **yolo11s 960 permissivo (adotada)** | **+2,7%** | **+6,3%** | +57,9% |
 
-  Na câmera principal (000018) é a melhor. Na 000026 todas as configurações sensíveis contam mais que a referência (82 "a mais"): ou duplicam veículos ou a referência perde veículos; só uma contagem humana decide.
+  Na câmera principal (000018) é a melhor. Na 000026 todas as configurações sensíveis contam mais que a referência (82 "a mais"): ou duplicam veículos ou a referência perde veículos; só uma contagem humana decide. **Resolvido na fase 2l:** era a referência que perdia veículos (rastreador TrackTrack com limiar 0,7); refeita com ByteTrack, o coletor atual fica entre −13% e +1% dela.
 - **Tempo:** intervalo entre clipes ~60 s na maioria das rodadas; cerca de 1 rodada em 4 perde um clipe (114–125 s), com a GPU dividida com o Ollama.
 - **Série histórica:** o habitual passou a usar só clipes do mesmo detector (`montar_base` filtra pela configuração do clipe mais recente da câmera), e o CSV ganhou a coluna `deteccao`; sem isso, o detector mais sensível pareceria "acima do habitual". Consequência: o habitual recomeça do zero a partir de 19/11/2026 23h10.
 - **Autoria:** página Sobre, FAQ (as duas cópias) e rodapé do painel citam Labs.fanara.com.br, a licença AGPL-3.0 e o repositório.
@@ -198,6 +198,16 @@ Atualizado em 19/11/2026.
 
 - Pedido do autor (20/11/2026): "continue e publique de forma autônoma até zerar a lista"; antes, "decida por mim".
 - **Os "a mais" da 000026 não são duplicatas, a referência é que perdia veículos.** A configuração do coletor (`yolo11s`, 960 px, rastreador permissivo) contava 58% a mais que a referência (`yolo11x`, 1280 px) na 000026, com 103 veículos "a mais" nos 7 clipes. Com `comparar --diag`, montei folhas de 3 quadros (1 s antes, cruzamento, 1 s depois) de cada "a mais" e examinei 20 eventos em 5 folhas: todos veículos distintos cruzando a linha (três carros lado a lado, carros vindo para a câmera, carros andando na fila), nenhum veículo com dois IDs. As confianças desses veículos ficam entre 0,3 e 0,8; a referência usava o rastreador padrão do Ultralytics (TrackTrack, que só abre trajetória com 0,7), o mesmo que fazia o coletor antigo perder veículos. Conclusão: a referência antiga subconta; a tabela da fase 2j compara contra uma base baixa.
+- **Referência refeita sem o viés** (20/11/2026): mesmo `yolo11x` a 1280 px, com o ByteTrack padrão do Ultralytics (abre trajetória com 0,25), já com a linha nova da 000026; 39 min nos 13 clipes. A antiga ficou em `validacao/referencia_tracktrack.csv`, `eventos_referencia_tracktrack.csv` e `comparacao_referencia_tracktrack.txt`. Exemplo: no clipe 000026 de 13/11 00h43 a antiga via 1 veículo, a nova vê 31. Totais nos 13 clipes noturnos (tabela completa em `validacao/comparacao_referencia.txt`):
+
+  | | Referência nova | Coletor atual (`yolo11s` 960, permissivo) | Coletor antigo (`yolo11n` 640, padrão) | `yolo11n` permissivo 960 |
+  |---|---|---|---|---|
+  | 000018 desce (da ponte para Icaraí) | 216 | 192 (−11,1%) | 79 (−63,4%) | 158 (−26,9%) |
+  | 000018 sobe (para a ponte) | 154 | 151 (−1,9%) | 128 (−16,9%) | 146 (−5,2%) |
+  | 000026 desce (vem para a câmera) | 85 | 74 (−12,9%) | 0 (−100%) | 38 (−55,3%) |
+  | 000026 sobe (se afasta) | 216 | 218 (+0,9%) | 85 (−60,6%) | 163 (−24,5%) |
+
+  Os +58% da 000026 viraram +0,9%: a configuração adotada na fase 2j continua a melhor, agora por uma comparação que se sustenta. Continua não sendo erro real (a referência também é IA); só a contagem manual mede o erro. A 000018 também mudou um pouco de enquadramento (mais aproximada que em 13/11), mas a linha ainda atravessa todas as faixas do cruzamento.
 - **A câmera 000026 gira e a linha estava errada desde 16/11.** Até 13/11 o enquadramento mostrava só a pista que se afasta; de 16/11 em diante (e hoje) mostra as duas pistas com canteiro. A linha (290, 300)–(590, 300), traçada para o enquadramento antigo, cortava só a faixa da direita da pista que vem para a câmera e parte da que se afasta. Linha nova ((95, 300)–(640, 300)), na mesma altura, atravessa as duas pistas inteiras. Nos 4 clipes de 16/11, com o mesmo rastreamento: "desce" (vem para a câmera) 25 → 74, "sobe" 122 → 127. No ar desde 00h51: 10 a 14 veículos por clipe no "desce", contra 2 a 9 antes. O sentido real da 000026 continua a confirmar: "desce" é o que vem para a câmera, "sobe" o que se afasta.
 - **Configuração do clipe inclui a linha:** `exportar.ler` monta `config` com modelo, detector e linha; habitual e tendência só comparam clipes medidos do mesmo jeito. O CSV por hora separa as linhas e a coluna `deteccao` diz qual linha contou. Para a 000026, habitual e tendência recomeçam em 20/11 00h51.
 - **Contagem por tipo no "agora":** `tendencia` ganhou `tipos` (veículos/h de carro, moto, ônibus e caminhão nos últimos 15 min, a mesma base do "Movimento"); o cartão mostra "Por tipo, por hora: carros … · motos … · ônibus … · caminhões …".

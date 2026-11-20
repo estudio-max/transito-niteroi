@@ -1,14 +1,14 @@
 ﻿arquivo;camera;condicao;manual_carro_desce;manual_carro_sobe;manual_moto_desce;manual_moto_sobe;manual_onibus_desce;manual_onibus_sobe;manual_caminhao_desce;manual_caminhao_sobe;obs
-000026_20261113T004220;000026;noite;0;19;0;0;0;0;0;0;referência yolo11x.pt {'imgsz': 1280}
-000018_20261113T004214;000018;noite;48;12;0;0;0;0;1;0;referência yolo11x.pt {'imgsz': 1280}
-000026_20261113T004317;000026;noite;0;1;0;0;0;0;0;0;referência yolo11x.pt {'imgsz': 1280}
-000018_20261113T004314;000018;noite;32;27;2;0;1;0;0;1;referência yolo11x.pt {'imgsz': 1280}
-000026_20261113T004419;000026;noite;0;6;0;0;0;0;0;0;referência yolo11x.pt {'imgsz': 1280}
-000018_20261113T004419;000018;noite;50;20;0;0;0;0;0;0;referência yolo11x.pt {'imgsz': 1280}
-000026_20261116T005718;000026;noite;1;29;0;0;0;0;0;0;referência yolo11x.pt {'imgsz': 1280}
-000018_20261116T005717;000018;noite;25;29;0;0;0;3;0;0;referência yolo11x.pt {'imgsz': 1280}
-000026_20261116T005820;000026;noite;0;25;0;0;0;0;0;0;referência yolo11x.pt {'imgsz': 1280}
-000018_20261116T005819;000018;noite;8;22;0;1;0;1;0;0;referência yolo11x.pt {'imgsz': 1280}
-000026_20261116T005924;000026;noite;2;22;0;0;0;0;0;0;referência yolo11x.pt {'imgsz': 1280}
-000026_20261116T010021;000026;noite;1;30;0;0;0;0;0;1;referência yolo11x.pt {'imgsz': 1280}
-000018_20261116T010021;000018;noite;20;23;0;2;0;1;0;0;referência yolo11x.pt {'imgsz': 1280}
+000026_20261113T004220;000026;noite;3;32;0;0;0;0;0;3;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000018_20261113T004214;000018;noite;51;14;3;1;0;0;3;0;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000026_20261113T004317;000026;noite;0;27;0;0;0;0;0;4;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000018_20261113T004314;000018;noite;34;28;7;0;1;0;0;1;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000026_20261113T004419;000026;noite;1;24;0;0;0;0;0;4;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000018_20261113T004419;000018;noite;53;22;3;1;0;0;1;0;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000026_20261116T005718;000026;noite;24;31;0;0;0;0;0;1;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000018_20261116T005717;000018;noite;27;29;1;0;0;3;0;0;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000026_20261116T005820;000026;noite;17;29;0;0;0;0;0;0;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000018_20261116T005819;000018;noite;11;24;0;1;0;1;0;0;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000026_20261116T005924;000026;noite;19;27;0;0;0;0;0;0;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000026_20261116T010021;000026;noite;21;33;0;0;0;0;0;1;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
+000018_20261116T010021;000018;noite;21;22;0;5;0;2;0;0;referência yolo11x.pt {'imgsz': 1280, 'tracker': 'bytetrack.yaml'}
