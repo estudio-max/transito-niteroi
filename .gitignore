@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.coverage
+*.pt
+*.db
+*.mp4
+.env
+backup-site/
+coletor.log
+dados-prf/
+.claude/
+node_modules/
+painel/dist/
+# gerados a cada coleta (uv run exportar.py e uv run sinistros.py)
+painel/public/dados.json
+painel/public/dados-por-hora.csv
+painel/public/feed.xml
+painel/public/sinistros.json

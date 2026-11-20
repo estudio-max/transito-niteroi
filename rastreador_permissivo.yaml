@@ -1,0 +1,9 @@
+# Variante do ByteTrack que abre trajetória com confiança baixa (0,10 em vez de 0,25).
+# Acha mais motos, mas pode contar o mesmo veículo duas vezes: validar contra contagem manual.
+tracker_type: bytetrack
+track_high_thresh: 0.10
+track_low_thresh: 0.05
+new_track_thresh: 0.10
+track_buffer: 30
+match_thresh: 0.8
+fuse_score: True

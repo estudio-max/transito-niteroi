@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@200..800&display=swap" rel="stylesheet" />
+    <title>Trânsito na saída da Ponte Rio–Niterói, ao vivo | Fluxo Niterói</title>
+    <meta
+      name="description"
+      content="Como está o trânsito agora na saída da Ponte Rio–Niterói: Ilha da Conceição, Fonseca, Jansen de Melo e Centro, com ônibus por hora e ocorrências, medidos por IA nas câmeras públicas da NitTrans."
+    />
+    <link rel="canonical" href="https://transito.fanara.com.br/" />
+    <link rel="alternate" type="application/rss+xml" title="Trânsito na saída da Ponte, Niterói" href="https://transito.fanara.com.br/feed.xml" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:url" content="https://transito.fanara.com.br/" />
+    <meta property="og:title" content="Trânsito na saída da Ponte Rio–Niterói, ao vivo" />
+    <meta
+      property="og:description"
+      content="Fluxo e ocupação de veículos na saída da Ponte Rio–Niterói, medidos nas câmeras públicas da NitTrans. Estudo cívico, dados preliminares."
+    />
+    <meta name="twitter:card" content="summary" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Dataset",
+        "name": "Fluxo Niterói: contagem de veículos na Av. Jansen de Melo",
+        "description": "Contagem automática de veículos por câmera e sentido, em médias de 5 minutos, na Av. Jansen de Melo, Niterói (RJ), a partir das câmeras públicas de videomonitoramento da NitTrans. Dados preliminares, ainda não validados contra contagem manual.",
+        "url": "https://transito.fanara.com.br/",
+        "inLanguage": "pt-BR",
+        "isAccessibleForFree": true,
+        "spatialCoverage": "Av. Jansen de Melo, Centro, Niterói, RJ, Brasil",
+        "variableMeasured": ["Fluxo de veículos por hora", "Veículos visíveis por quadro"],
+        "distribution": {
+          "@type": "DataDownload",
+          "encodingFormat": "application/json",
+          "contentUrl": "https://transito.fanara.com.br/dados.json"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <h1>Fluxo Niterói</h1>
+      <p>
+        Contagem de veículos na Av. Jansen de Melo, saída da Ponte Rio–Niterói, a partir das câmeras
+        públicas da NitTrans. Os dados são preliminares e ainda não foram validados. Ative o
+        JavaScript para ver os gráficos, ou abra <a href="./dados.json">dados.json</a>.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@200..800&display=swap" rel="stylesheet" />
+    <title>Sobre o Fluxo Niterói: como funciona e guia dos gráficos</title>
+    <meta
+      name="description"
+      content="Como o Fluxo Niterói conta veículos na Av. Jansen de Melo com as câmeras públicas da NitTrans, o método de validação e o que cada gráfico do painel mostra."
+    />
+    <link rel="canonical" href="https://transito.fanara.com.br/sobre/" />
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:url" content="https://transito.fanara.com.br/sobre/" />
+    <meta property="og:title" content="Sobre o Fluxo Niterói: como funciona e guia dos gráficos" />
+    <meta
+      property="og:description"
+      content="Contagem de veículos na saída da Ponte Rio–Niterói com visão computacional: conceito, método de validação e guia de leitura de cada gráfico."
+    />
+    <meta name="twitter:card" content="summary" />
+    <!-- Mesmo texto de src/faq.ts: mudou lá, mude aqui. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "inLanguage": "pt-BR",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "O que é o Fluxo Niterói?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "É um estudo cívico que conta automaticamente os veículos que passam pela Av. Jansen de Melo, na saída da Ponte Rio–Niterói, usando os vídeos públicos das câmeras da NitTrans. O objetivo é localizar o gargalo do trecho com dados e testar correções em simulação antes de propô-las à prefeitura."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "De onde vêm os dados?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Das câmeras de videomonitoramento que a NitTrans publica na internet. A cada minuto o sistema baixa o último clipe de cada câmera, conta os veículos que cruzam uma linha fixa na imagem e guarda apenas os números."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Os números já são confiáveis?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Ainda não. A contagem automática está sendo conferida contra contagem manual às cegas, por câmera e por condição de luz e trânsito. Até essa validação terminar, os números servem para acompanhar o estudo, não como resultado."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "O sistema guarda imagens ou placas?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Não. O vídeo é apagado logo depois da contagem e só os números ficam no banco. O sistema não lê placas nem identifica pessoas."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Por que às vezes o painel diz que a coleta está pausada?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "A coleta roda em um notebook pessoal. Quando ele está desligado ou ocupado, o painel mostra o horário do último clipe analisado e os gráficos ficam com um intervalo sem dados."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "O projeto tem relação com a prefeitura?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Não. É um estudo independente feito por um morador de Niterói. A intenção é levar os resultados validados à NitTrans e à prefeitura como contribuição."
+            }
+          }
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <h1>Sobre o Fluxo Niterói</h1>
+      <p>
+        Estudo cívico que conta os veículos na Av. Jansen de Melo, saída da Ponte Rio–Niterói, a
+        partir das câmeras públicas da NitTrans. Ative o JavaScript para ver o guia completo dos
+        gráficos. <a href="../">Voltar ao painel</a>.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main-sobre.tsx"></script>
+  </body>
+</html>
