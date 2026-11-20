@@ -50,6 +50,9 @@ Classifique a situação desse veículo:
 
 Prefira "indeterminado" a adivinhar. Use confiança "alta" só com sinais claros nos quadros.
 A descrição é uma frase em português, de até 160 caracteres, sobre o que se vê na via.
+Comece pelo tipo do veículo marcado, o mais específico que a imagem permitir (carro, SUV,
+picape, van, utilitário, moto, ônibus, caminhão), e pela cor (ex.: "SUV prata parado...",
+"Ônibus branco parado..."), para quem lê achá-lo na imagem; o que não der para ver, omita.
 Não descreva pessoas nem leia placas."""
 
 
