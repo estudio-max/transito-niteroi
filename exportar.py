@@ -45,7 +45,9 @@ def ler(db, desde_utc):
         f"{' + '.join(f'{v}_{s}' for s in SENTIDOS)} AS {v}" for v in VEICULOS.values()
     )
     cur = db.execute(
-        f"SELECT camera, clipe_utc, duracao_s, ocupacao, {somas}, {tipos} FROM clipes"
+        "SELECT camera, clipe_utc, duracao_s, ocupacao,"
+        f" COALESCE(modelo, '') || '|' || COALESCE(detector, '') AS config, {somas}, {tipos}"
+        " FROM clipes"
         " WHERE clipe_utc >= ? ORDER BY clipe_utc",
         (desde_utc,),
     )
@@ -171,10 +173,17 @@ def _chave(utc):
 
 
 def montar_base(historico):
-    """{câmera: {(dia útil?, hora): {"oc": ocupações ordenadas, "dias": datas}}}."""
+    """{câmera: {(dia útil?, hora): {"oc": ocupações ordenadas, "dias": datas}}}.
+    Só entram clipes contados com a mesma configuração do detector (modelo, resolução,
+    rastreador) do clipe mais recente da câmera: um detector mais sensível vê mais veículos
+    por quadro, e misturar as séries pareceria "acima do habitual" só por causa da troca."""
     base = {cam: {} for cam in CAMERAS}
+    atual = {}
     for c in historico:
-        if c["camera"] not in base:
+        if c["camera"] in base and c["clipe_utc"] >= atual.get(c["camera"], ("", ""))[0]:
+            atual[c["camera"]] = (c["clipe_utc"], c.get("config"))
+    for c in historico:
+        if c["camera"] not in base or c.get("config") != atual[c["camera"]][1]:
             continue
         b = base[c["camera"]].setdefault(_chave(c["clipe_utc"]), {"oc": [], "dias": set()})
         b["oc"].append(c["ocupacao"])
@@ -744,11 +753,14 @@ def csv_por_hora(db):
     somas = ", ".join(f"SUM(c.{col})" for col in COLUNAS)
     linhas = db.execute(
         "SELECT strftime('%Y-%m-%d %H:00', c.clipe_utc, '-3 hours') AS hora_local, c.camera,"
-        f" ROUND(SUM(c.duracao_s) / 60.0, 1), {somas}, ROUND(AVG(c.ocupacao), 2),"
-        " MAX(k.chuva_mm)"
+        f" ROUND(SUM(c.duracao_s) / 60.0, 1), {somas},"
+        " COALESCE(substr(c.modelo, 1, instr(c.modelo || '@', '@') - 1), '') || ' '"
+        " || COALESCE(c.detector, ''),"
+        " ROUND(AVG(c.ocupacao), 2), MAX(k.chuva_mm)"
         " FROM clipes c LEFT JOIN clima k"
         " ON k.hora_utc = strftime('%Y-%m-%dT%H:00:00', c.clipe_utc) || '+00:00'"
-        " GROUP BY hora_local, c.camera ORDER BY hora_local, c.camera"
+        " GROUP BY hora_local, c.camera, c.modelo, c.detector"
+        " ORDER BY hora_local, c.camera"
     ).fetchall()
     nomes = {cam["id"]: cam["nome"] for cam in REGIAO}
     saida = io.StringIO()
@@ -760,6 +772,7 @@ def csv_por_hora(db):
             "nome",
             "minutos_de_video",
             *COLUNAS,
+            "deteccao",
             "ocupacao_media",
             "chuva_mm",
         ]

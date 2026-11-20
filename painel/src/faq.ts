@@ -29,6 +29,6 @@ export const FAQ = [
   {
     pergunta: 'O projeto tem relação com a prefeitura?',
     resposta:
-      'Não. É um estudo independente feito por um morador de Niterói. A intenção é levar os resultados validados à NitTrans e à prefeitura como contribuição.',
+      'Não. É um estudo independente do Labs.fanara.com.br, de código aberto (licença AGPL-3.0). A intenção é levar os resultados validados à NitTrans e à prefeitura como contribuição.',
   },
 ];

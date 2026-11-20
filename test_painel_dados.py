@@ -1,5 +1,6 @@
 """Dados de leitura rápida do painel: situação, ônibus, câmeras no ar e veredito."""
 
+import datetime
 import sqlite3
 import urllib.error
 
@@ -357,3 +358,17 @@ def test_resumos_por_janela():
     assert r["7d"]["ocorrencias"] == 1 and r["7d"]["dias_com_dados"] == 4
     assert r["total"]["dias_com_dados"] == 5
     assert r["total"]["cameras"][0]["horas_video"] == round(109 / 60, 1)
+
+
+def test_base_do_habitual_so_usa_clipes_do_mesmo_detector():
+    from exportar import montar_base
+
+    antigo = [{**c, "config": "yolo11n|{}"} for c in _base_mesma_hora()]
+    hoje = {**_clipe("000018", 2, ocupacao=30.0), "config": "yolo11s|{'imgsz': 960}"}
+    # a câmera passou a ser contada com outro detector: a base antiga não vale mais
+    assert montar_base(antigo + [hoje])["000018"] == {
+        (True, 17): {"oc": [30.0], "dias": {datetime.date(2026, 11, 19)}}
+    }
+    # com o mesmo detector, a base antiga continua valendo
+    mesmo = {**hoje, "config": "yolo11n|{}"}
+    assert len(montar_base(antigo + [mesmo])["000018"][(True, 17)]["oc"]) == 40

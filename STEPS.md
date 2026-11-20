@@ -156,7 +156,32 @@ Atualizado em 19/11/2026.
   - Corrigido: `exportar.py` quebrava na linha de comando (função definida depois do bloco principal); teste de regressão que roda o script.
 - Prova: 76/76 testes; build e `astryx doctor` sem falhas; conferido na pré-visualização e no ar (mapa com 7 câmeras e 32 trechos da PRF, seções novas, sem erro no console); primeira volta do coletor com velocidade gravada (55 e 29 passagens, de 0,5 a 6,3). Backup do site anterior em `backup-site/transito-antes-sinistros-2026-11-19.tgz`.
 
+## Fase 2j — Detector maior, autoria e GitHub aberto · **feito em 19–20/11/2026**
+
+- **Detector:** o coletor passou a rodar `--modelo yolo11s.pt --imgsz 960 --conf 0.10 --tracker rastreador_permissivo.yaml` (antes: `yolo11n`, 640 px, rastreador padrão). Escolha pela comparação contra a referência (`yolo11x` a 1280 px, outro detector, não contagem humana; 13 clipes noturnos, `validar.py comparar --contra referencia`):
+
+  | Configuração | 000018 desce | 000018 sobe | 000026 sobe |
+  |---|---|---|---|
+  | yolo11n padrão | -57,8% | -9,9% | -36,8% |
+  | yolo11n permissivo 960 | -15,5% | +2,8% | +18,8% |
+  | yolo11s 960, rastreador padrão | -26,2% | -7,0% | +13,5% |
+  | **yolo11s 960 permissivo (adotada)** | **+2,7%** | **+6,3%** | +57,9% |
+
+  Na câmera principal (000018) é a melhor. Na 000026 todas as configurações sensíveis contam mais que a referência (82 "a mais"): ou duplicam veículos ou a referência perde veículos; só uma contagem humana decide.
+- **Tempo:** intervalo entre clipes ~60 s na maioria das rodadas; cerca de 1 rodada em 4 perde um clipe (114–125 s), com a GPU dividida com o Ollama.
+- **Série histórica:** o habitual passou a usar só clipes do mesmo detector (`montar_base` filtra pela configuração do clipe mais recente da câmera), e o CSV ganhou a coluna `deteccao`; sem isso, o detector mais sensível pareceria "acima do habitual". Consequência: o habitual recomeça do zero a partir de 19/11/2026 23h10.
+- **Autoria:** página Sobre, FAQ (as duas cópias) e rodapé do painel citam Labs.fanara.com.br, a licença AGPL-3.0 e o repositório.
+- **GitHub:** <https://github.com/estudio-max/transito-niteroi>, público, AGPL-3.0, commits com e-mail `noreply` do GitHub. Fora do repositório: banco, vídeos, modelos, log, backups, dados da PRF e os arquivos gerados a cada coleta.
+- Achado: o `node_modules` do painel foi esvaziado no reinício da sessão; reinstalado com `npm ci`.
+
 ## Radar: ideias a amadurecer (19/11/2026)
+
+### Lista de melhorias de visualização recebida em 20/11/2026 (avaliação)
+
+- **Fazer logo (baixo custo, sem conflito com as regras do projeto):** tendência dos últimos 15/30/60 minutos por câmera (subindo, estável, descendo), que dá referência sem precisar do habitual; camadas liga/desliga no mapa (trânsito agora × sinistros históricos); ponto da câmera em amarelo quando há ocorrência aberta; clicar na ocorrência centraliza o mapa; versão só texto para internet ruim; marcar no ranking de sinistros "contando agora" (Jansen) separado de "câmera sem contagem".
+- **A amadurecer:** contagem total por tipo no "agora" (o detector já conta carro, moto, ônibus e caminhão; a lista supôs que só ônibus, o que não procede); página para incorporar em outros sites (`<iframe>`); filtro de sinistros por gravidade e por tipo de acidente (a base da PRF tem `tipo_acidente` e vítimas por boletim; motos exigiria a tabela de veículos envolvidos).
+- **Não recomendado agora:** limiar fixo de veículos por 15 minutos para "livre/retenção" (arbitrário, cada câmera enxerga um trecho diferente; é o "espaço" que falta calibrar); foto da ocorrência, mesmo desfocada (quebra a regra de não guardar imagens e exige desfoque confiável de rostos e placas); botões de confirmação pública (o site é estático, sem servidor para receber votos, e seria fácil de manipular; alternativa: link para abrir uma issue no GitHub); prévia do vídeo da NitTrans no mapa (republicar o vídeo dela no site exige autorização; um link para o app da NitTrans resolve).
+
 
 ### Contagem só faz sentido com tempo e espaço (pedido do autor, 19/11/2026)
 

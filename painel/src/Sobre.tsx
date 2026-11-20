@@ -391,9 +391,11 @@ export default function Sobre() {
             <Divider />
 
             <Text type="supporting" color="secondary">
-              Estudo cívico independente, sem vínculo com a Prefeitura de Niterói
-              nem com a NitTrans. As imagens de origem são as publicadas pela
-              NitTrans em seu serviço de videomonitoramento.
+              Estudo cívico independente do Labs.fanara.com.br, sem vínculo com a
+              Prefeitura de Niterói nem com a NitTrans. As imagens de origem são
+              as publicadas pela NitTrans em seu serviço de videomonitoramento.
+              Código aberto sob a licença AGPL-3.0:{' '}
+              <Link href="https://github.com/estudio-max/transito-niteroi">repositório no GitHub</Link>.
             </Text>
           </VStack>
         </LayoutContent>

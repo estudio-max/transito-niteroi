@@ -1800,8 +1800,10 @@ export default function Painel() {
                 direito é o que vai para a ponte (sentido confirmado). A câmera
                 Jansen sentido Ponte mostra os dois sentidos; qual lado é qual
                 ainda está sendo confirmado. Os intervalos sem linha nos gráficos são períodos
-                em que a coleta não rodou. Estudo cívico independente, sem vínculo
-                com a Prefeitura de Niterói.
+                em que a coleta não rodou. Estudo cívico independente do
+                Labs.fanara.com.br, sem vínculo com a Prefeitura de Niterói.
+                Código aberto (AGPL-3.0):{' '}
+                <Link href="https://github.com/estudio-max/transito-niteroi">repositório no GitHub</Link>.
               </Text>
               <Text type="body">
                 O que cada gráfico mostra e como ler:{' '}

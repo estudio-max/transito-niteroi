@@ -49,10 +49,10 @@ Com o Ollama fechado ou sem o modelo, a contagem funciona igual e os incidentes 
 Para coletar o dia todo e manter o site, o feed, o CSV, a chuva por hora e a cópia diária do banco em dia, deixe rodando num terminal próprio (fora do Claude Code, que encerra o processo ao fechar a sessão):
 
 ```bash
-uv run coletor.py --publicar hostgator-fanara:transito.fanara.com.br
+uv run coletor.py --modelo yolo11s.pt --imgsz 960 --conf 0.10 --tracker rastreador_permissivo.yaml --publicar hostgator-fanara:transito.fanara.com.br
 ```
 
-O notebook precisa ficar ligado na tomada e configurado para não suspender. As janelas de pico (`--janelas`) continuam disponíveis como plano B.
+Essa é a configuração do detector adotada em 19/11/2026 (ver `STEPS.md`, fase 2j); o modelo é baixado sozinho na primeira execução. O notebook precisa ficar ligado na tomada e configurado para não suspender. As janelas de pico (`--janelas`) continuam disponíveis como plano B.
 
 ## Incidentes
 
