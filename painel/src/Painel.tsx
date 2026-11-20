@@ -1516,7 +1516,17 @@ function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
   const st = statusDoPonto(p, dados.situacao?.[p.id]);
   const bus = dados.onibus?.[p.id];
   const t = dados.tendencia?.[p.id];
-  const porHora = (v: number | null) => (v == null ? 'sem dado' : numero.format(v));
+  // 30 e 60 min só aparecem com vídeo suficiente na janela (exportar.tendencia)
+  const janelas = t
+    ? (
+        [
+          ['30 min', t.m30],
+          ['60 min', t.m60],
+        ] as const
+      )
+        .filter(([, v]) => v != null)
+        .map(([rotulo, v]) => `${rotulo}: ${numero.format(v!)}`)
+    : [];
   return (
     <VStack gap={1}>
       <HStack gap={2} vAlign="center">
@@ -1533,9 +1543,11 @@ function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
           <Text type="body">
             {`Movimento: ${numero.format(t.m15)} veículos/h nos últimos 15 min${t.direcao ? `, ${DIRECAO[t.direcao]}` : ''}`}
           </Text>
-          <Text type="body" color="secondary">
-            {`Últimos 30 min: ${porHora(t.m30)} · 60 min: ${porHora(t.m60)}`}
-          </Text>
+          {janelas.length > 0 && (
+            <Text type="body" color="secondary">
+              {`Últimos ${janelas.join(' · ')}`}
+            </Text>
+          )}
         </VStack>
       )}
       {bus && bus.por_hora > 0 && bus.intervalo_min != null && (

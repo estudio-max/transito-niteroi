@@ -402,9 +402,11 @@ def tendencia(historico, agora_utc):
     """Para cada câmera contada: veículos por hora (os dois sentidos) nos últimos 15, 30 e 60
     minutos e a direção: compara os últimos 15 minutos com os 45 anteriores. Não depende do
     habitual: diz só se o movimento está subindo, estável ou descendo agora.
-    Exige 10 minutos de vídeo nos últimos 15 e 20 minutos nos 45 anteriores. Só usa clipes do
-    mesmo detector do clipe mais recente: logo depois de uma troca, um detector que conta mais
-    pareceria movimento subindo."""
+    Cada janela só vale se os clipes a cobrem de ponta a ponta (o mais antigo alcança dois
+    terços dela) e somam um terço dela em vídeo; senão o número de 30 ou 60 min é None e não
+    há direção. Assim "60 min" não vira média de 25, e a 000018, que repete clipe e tem só
+    metade do tempo em vídeo, não fica de fora. Só usa clipes do mesmo detector do clipe mais
+    recente: logo depois de uma troca, um detector que conta mais pareceria movimento subindo."""
     agora = _dt(agora_utc)
     saida = {}
     for cam in CAMERAS:
@@ -423,17 +425,23 @@ def tendencia(historico, agora_utc):
         def video_min(clipes):
             return sum(c["duracao_s"] for c in clipes) / 60
 
+        def cobre(clipes, minutos, inicio=0):  # janela [inicio, inicio + minutos) atrás
+            if not clipes:
+                return False
+            idade = (agora - min(_dt(c["clipe_utc"]) for c in clipes)).total_seconds() / 60
+            return idade >= inicio + minutos * 2 / 3 and video_min(clipes) >= minutos / 3
+
         ult15, ult30, ult60, antes = janela(0, 15), janela(0, 30), janela(0, 60), janela(15, 60)
         if not ult15:
             continue
         direcao = None
-        if video_min(ult15) >= 10 and video_min(antes) >= 20:
+        if cobre(ult15, 15) and cobre(antes, 45, inicio=15):
             razao = _fluxo_h(ult15) / max(_fluxo_h(antes), 1)
             direcao = "subindo" if razao > 1.15 else "descendo" if razao < 0.85 else "estavel"
         saida[cam] = {
             "m15": _fluxo_h(ult15),
-            "m30": _fluxo_h(ult30),
-            "m60": _fluxo_h(ult60),
+            "m30": _fluxo_h(ult30) if cobre(ult30, 30) else None,
+            "m60": _fluxo_h(ult60) if cobre(ult60, 60) else None,
             "direcao": direcao,
         }
     return saida

@@ -387,8 +387,16 @@ def test_tendencia_sobe_desce_e_exige_video():
     # troca de detector há 15 min: o antigo contava menos, e isso não vira "subindo"
     troca = [{**c, "config": "novo" if i < 15 else "antigo"} for i, c in enumerate(serie(10, 20))]
     assert tendencia(troca, AGORA)["000018"]["direcao"] is None
+    # 25 min de detector novo: o número de 30 min sai, o de 60 ainda não
+    novo25 = [{**c, "config": "novo" if i < 25 else "antigo"} for i, c in enumerate(serie(10, 20))]
+    recente = tendencia(novo25, AGORA)["000018"]
+    assert recente["m30"] is not None and recente["m60"] is None
+    # clipe repetido: um clipe a cada 2 min ainda cobre a hora e dá o número de 60 min
+    ralo = tendencia(serie(10, 20)[::2], AGORA)["000018"]
+    assert ralo["m30"] is not None and ralo["m60"] is not None and ralo["direcao"] == "subindo"
     pouco = [{**_clipe("000018", m), "desce": 5} for m in range(0, 5)]  # só 5 min de vídeo
     assert tendencia(pouco, AGORA)["000018"]["direcao"] is None
+    assert tendencia(pouco, AGORA)["000018"]["m30"] is None
     assert "000026" not in tendencia(pouco, AGORA)
 
 
