@@ -398,6 +398,105 @@ def _frase_periodo(cameras, n_ocorrencias):
     return "; ".join(partes) + "."
 
 
+def tendencia(historico, agora_utc):
+    """Para cada câmera contada: veículos por hora (os dois sentidos) nos últimos 15, 30 e 60
+    minutos e a direção: compara os últimos 15 minutos com os 45 anteriores. Não depende do
+    habitual: diz só se o movimento está subindo, estável ou descendo agora.
+    Exige 10 minutos de vídeo nos últimos 15 e 20 minutos nos 45 anteriores. Só usa clipes do
+    mesmo detector do clipe mais recente: logo depois de uma troca, um detector que conta mais
+    pareceria movimento subindo."""
+    agora = _dt(agora_utc)
+    saida = {}
+    for cam in CAMERAS:
+        g = [c for c in historico if c["camera"] == cam]
+        if g:
+            config = max(g, key=lambda c: c["clipe_utc"]).get("config")
+            g = [c for c in g if c.get("config") == config]
+
+        def janela(de, ate, g=g):
+            return [
+                c
+                for c in g
+                if timedelta(minutes=de) <= agora - _dt(c["clipe_utc"]) < timedelta(minutes=ate)
+            ]
+
+        def video_min(clipes):
+            return sum(c["duracao_s"] for c in clipes) / 60
+
+        ult15, ult30, ult60, antes = janela(0, 15), janela(0, 30), janela(0, 60), janela(15, 60)
+        if not ult15:
+            continue
+        direcao = None
+        if video_min(ult15) >= 10 and video_min(antes) >= 20:
+            razao = _fluxo_h(ult15) / max(_fluxo_h(antes), 1)
+            direcao = "subindo" if razao > 1.15 else "descendo" if razao < 0.85 else "estavel"
+        saida[cam] = {
+            "m15": _fluxo_h(ult15),
+            "m30": _fluxo_h(ult30),
+            "m60": _fluxo_h(ult60),
+            "direcao": direcao,
+        }
+    return saida
+
+
+def texto_simples(dados):
+    """Página só texto, sem JavaScript, para internet ruim: veredito, cada ponto com a
+    tendência e as ocorrências. Gerada a cada coleta como texto.html."""
+    from html import escape
+
+    nomes = {c: cfg["nome"] for c, cfg in CAMERAS.items()}
+    nivel = {
+        "livre": "abaixo do habitual",
+        "moderado": "dentro do habitual",
+        "pesado": "acima do habitual",
+        "sem_historico": "ainda sem base para comparar com este dia e hora",
+        "sem_dado_recente": "sem medição agora",
+    }
+    seta = {"subindo": "subindo", "estavel": "estável", "descendo": "descendo", None: ""}
+    linhas = [dados["veredito"]["texto"]]
+    if dados["veredito"].get("detalhe"):
+        linhas.append(dados["veredito"]["detalhe"])
+    for cam, s in dados.get("situacao", {}).items():
+        t = dados.get("tendencia", {}).get(cam)
+        mov = (
+            f" Movimento: {t['m15']:,} veículos/h nos últimos 15 min".replace(",", ".")
+            + (f", {seta[t['direcao']]}" if t["direcao"] else "")
+            + "."
+            if t and t["m15"] is not None
+            else ""
+        )
+        linhas.append(f"{nomes.get(cam, cam)}: {nivel.get(s['nivel'], s['nivel'])}.{mov}")
+    oc = dados.get("ocorrencias", [])
+    linhas.append(
+        "Ocorrências nas últimas 24 h: "
+        + (
+            "; ".join(
+                f"{TIPO_TEXTO.get(o['tipo'], o['tipo']).lower()} em {o['camera']} desde "
+                f"{_hora_local(o['inicio_utc'])}"
+                for o in oc
+            )
+            if oc
+            else "nenhuma"
+        )
+        + "."
+    )
+    corpo = "\n".join(f"<p>{escape(x)}</p>" for x in linhas)
+    quando = _dt(dados["gerado_utc"]).astimezone(FUSO).strftime("%d/%m às %Hh%M")
+    return (
+        '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>Saída da Ponte, só texto</title>"
+        '<meta name="robots" content="noindex"></head>'
+        '<body style="font-family:sans-serif;max-width:40rem;margin:1rem auto;padding:0 1rem;'
+        'line-height:1.5;color:#111;background:#fff">'
+        "<h1>Trânsito na saída da Ponte</h1>"
+        f"{corpo}"
+        f"<p><small>Atualizado em {quando}. Medição automática por IA nas câmeras públicas da"
+        ' NitTrans, ainda sem conferência. <a href="./">Painel completo</a>.</small></p>'
+        "</body></html>"
+    )
+
+
 def onibus(historico, agora_utc):
     """Ônibus por hora e intervalo médio entre eles, na última hora, por câmera contada.
     Só com pelo menos 10 minutos de vídeo na hora (menos que isso é sorte, não média)."""
@@ -559,6 +658,7 @@ def montar(
         "periodos": hist_periodos,
         "situacao": sit,
         "onibus": onibus(historico, agora_utc),
+        "tendencia": tendencia(historico, agora_utc),
         "regiao": cameras_no_ar(estados or {}, agora_utc),
         "resumo": resumo,
         "total_veiculos": sum(c[s] for c in clipes for s in SENTIDOS),
@@ -638,6 +738,8 @@ def exportar(banco="fluxo.db", saida=SAIDA, enviar=None):
     arquivo_feed.write_text(
         feed(dados["periodos"], ocorrencias_hist, dados["gerado_utc"]), encoding="utf-8"
     )
+    arquivo_texto = saida.with_name("texto.html")
+    arquivo_texto.write_text(texto_simples(dados), encoding="utf-8")
     if enviar:
         subprocess.run(  # noqa: S603
             [  # noqa: S607 - scp do sistema, como no resto do projeto
@@ -648,6 +750,7 @@ def exportar(banco="fluxo.db", saida=SAIDA, enviar=None):
                 str(saida),
                 str(arquivo_feed),
                 str(arquivo_csv),
+                str(arquivo_texto),
                 f"{enviar}/",
             ],  # noqa: S607
             check=True,

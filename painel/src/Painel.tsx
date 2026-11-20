@@ -33,7 +33,9 @@ import {Divider} from '@astryxdesign/core/Divider';
 import {Icon} from '@astryxdesign/core/Icon';
 import {StopIcon} from '@heroicons/react/24/solid';
 import {Link} from '@astryxdesign/core/Link';
+import {Button} from '@astryxdesign/core/Button';
 import {Topo} from './Topo';
+import type {FocoMapa} from './Mapa';
 
 // ============= DATA =============
 
@@ -88,6 +90,7 @@ interface Dados {
   };
   situacao?: Record<string, Situacao>;
   onibus?: Record<string, {por_hora: number; intervalo_min: number | null; minutos_video: number}>;
+  tendencia?: Record<string, Tendencia>;
   regiao?: PontoRegiao[];
   periodos?: Periodo[];
   antes_depois?: AntesDepois[];
@@ -132,6 +135,16 @@ interface AntesDepois {
 
 type Nivel = 'livre' | 'moderado' | 'pesado';
 
+// Veículos por hora (os dois sentidos) nos últimos 15, 30 e 60 min e a direção, que compara
+// os últimos 15 com os 45 anteriores (exportar.tendencia). Não depende do habitual.
+interface Tendencia {
+  m15: number | null;
+  m30: number | null;
+  m60: number | null;
+  direcao: 'subindo' | 'estavel' | 'descendo' | null;
+}
+const DIRECAO = {subindo: 'subindo', estavel: 'estável', descendo: 'descendo'} as const;
+
 // Pontos críticos de sinistros (sinistros.py): PRF nas rodovias federais e o ranking
 // de vias da NitTrans, transcrito da tabela publicada em imagem.
 interface Sinistros {
@@ -170,12 +183,13 @@ function useSinistros() {
   return s;
 }
 
-// Vias da tabela da NitTrans que têm câmera pública da região (coletor.REGIAO).
-const VIAS_COM_CAMERA: Record<string, string> = {
-  'Alameda São Boaventura': '2 câmeras, contagem ainda não ligada',
-  'Av. Professor João Brasil': '1 câmera, contagem ainda não ligada',
-  'Av. Feliciano Sodré': '2 câmeras, contagem ainda não ligada',
-  'Av. Jansen de Melo': '2 câmeras contando',
+// Vias da tabela da NitTrans que têm câmera pública da região (coletor.REGIAO), separando
+// as que este projeto conta das que só têm câmera.
+const VIAS_COM_CAMERA: Record<string, {cameras: number; contando: boolean}> = {
+  'Alameda São Boaventura': {cameras: 2, contando: false},
+  'Av. Professor João Brasil': {cameras: 1, contando: false},
+  'Av. Feliciano Sodré': {cameras: 2, contando: false},
+  'Av. Jansen de Melo': {cameras: 2, contando: true},
 };
 
 // Um período contínuo de coleta (exportar.periodos), mais recente primeiro.
@@ -830,7 +844,22 @@ const colunas: TableColumn<Clipe>[] = [
 const minutos = (o: Ocorrencia) =>
   Math.round((new Date(o.fim_utc).getTime() - new Date(o.inicio_utc).getTime()) / 60_000) + 1;
 
-function Ocorrencias({lista}: {lista: Ocorrencia[]}) {
+// Ocorrência ainda em andamento: o último clipe dela é recente em relação à coleta.
+const emAndamento = (o: Ocorrencia, dados: Dados) =>
+  dados.veredito?.nivel !== 'pausado' &&
+  dados.ultimo_clipe_utc != null &&
+  new Date(dados.ultimo_clipe_utc).getTime() - new Date(o.fim_utc).getTime() <
+    AO_VIVO_MIN * 60_000;
+
+function Ocorrencias({
+  lista,
+  noMapa,
+  aoVerNoMapa,
+}: {
+  lista: Ocorrencia[];
+  noMapa: Record<string, string>; // nome da câmera → id, só as que têm posição no mapa
+  aoVerNoMapa: (id: string) => void;
+}) {
   return (
     <ChartCard
       titulo="Ocorrências nas últimas 24 horas"
@@ -850,6 +879,16 @@ function Ocorrencias({lista}: {lista: Ocorrencia[]}) {
                 </Text>
               </HStack>
               <Text type="body">{o.descricao}</Text>
+              {noMapa[o.camera] && (
+                <HStack>
+                  <Button
+                    label="Ver no mapa"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => aoVerNoMapa(noMapa[o.camera])}
+                  />
+                </HStack>
+              )}
             </VStack>
           ))}
         </VStack>
@@ -945,19 +984,28 @@ function PontosCriticos({s}: {s: Sinistros}) {
         </ChartCard>
         <ChartCard
           titulo="Vias municipais com mais sinistros em quase 3 anos"
-          apoio="Soma de janeiro de 2024 a outubro de 2026. Conta quantidade, não gravidade. Fonte: NitTrans, tabela publicada como imagem e transcrita aqui.">
+          apoio="Soma de janeiro de 2024 a outubro de 2026. Conta quantidade, não gravidade. “Câmera contando”: este painel mede o trânsito na via. “Câmera sem contagem”: há câmera pública, mas ainda sem números deste projeto. Fonte: NitTrans, tabela publicada como imagem e transcrita aqui.">
           <VStack gap={3}>
-            {vias.map((v, i) => (
-              <VStack key={v.via} gap={0}>
-                <HStack gap={2} vAlign="center" wrap="wrap">
-                  <Text type="body" weight="semibold">{`${i + 1}. ${v.via}`}</Text>
-                  {VIAS_COM_CAMERA[v.via] && <Badge label="Tem câmera pública" variant="blue" />}
-                </HStack>
-                <Text type="body" color="secondary">
-                  {`${numero.format(v.total)} sinistros em quase 3 anos (${frequencia(v.total)})${VIAS_COM_CAMERA[v.via] ? ` · ${VIAS_COM_CAMERA[v.via]}` : ''}`}
-                </Text>
-              </VStack>
-            ))}
+            {vias.map((v, i) => {
+              const cam = VIAS_COM_CAMERA[v.via];
+              const n = cam ? `${cam.cameras} ${cam.cameras === 1 ? 'câmera' : 'câmeras'}` : '';
+              return (
+                <VStack key={v.via} gap={0}>
+                  <HStack gap={2} vAlign="center" wrap="wrap">
+                    <Text type="body" weight="semibold">{`${i + 1}. ${v.via}`}</Text>
+                    {cam && (
+                      <Badge
+                        label={cam.contando ? 'Câmera contando' : 'Câmera sem contagem'}
+                        variant={cam.contando ? 'green' : 'neutral'}
+                      />
+                    )}
+                  </HStack>
+                  <Text type="body" color="secondary">
+                    {`${numero.format(v.total)} sinistros em quase 3 anos (${frequencia(v.total)})${cam ? ` · ${n}${cam.contando ? ', contadas por este painel' : ', contagem ainda não ligada'}` : ''}`}
+                  </Text>
+                </VStack>
+              );
+            })}
             <Text type="body">
               <Link href={s.nittrans.url}>Ver a tabela original na NitTrans</Link>
             </Text>
@@ -1022,9 +1070,20 @@ const COR_MAPA = {
   sem_contagem: '#7a828c',
 } as const;
 
-function MapaRegiao({dados, sinistros}: {dados: Dados; sinistros: Sinistros | null}) {
+const ID_MAPA = 'mapa-regiao';
+
+function MapaRegiao({
+  dados,
+  sinistros,
+  foco,
+}: {
+  dados: Dados;
+  sinistros: Sinistros | null;
+  foco: FocoMapa | null;
+}) {
   const aoVivo = dados.veredito?.nivel !== 'pausado';
   const ultimo = dados.periodos?.[0];
+  const agoraOcorrencias = (dados.ocorrencias ?? []).filter(o => emAndamento(o, dados));
   const pontos = (dados.regiao ?? [])
     .filter(p => p.lat != null && p.lon != null)
     .map(p => {
@@ -1043,7 +1102,11 @@ function MapaRegiao({dados, sinistros}: {dados: Dados; sinistros: Sinistros | nu
             ? `${tituloPeriodo(ultimo)}: ${noPeriodo.minutos_pesado ? `acima do habitual por ${noPeriodo.minutos_pesado} min` : 'sem trânsito acima do habitual'}.`
             : 'Ponto medido; sem período recente.';
       }
-      return {id: p.id, nome: p.nome, lat: p.lat!, lon: p.lon!, cor, texto};
+      const oc = agoraOcorrencias.find(o => o.camera === p.nome);
+      if (oc) {
+        texto += ` Ocorrência agora: ${TIPO_OCORRENCIA[oc.tipo].rotulo.toLowerCase()} desde ${hora.format(new Date(oc.inicio_utc))} (classificação automática).`;
+      }
+      return {id: p.id, nome: p.nome, lat: p.lat!, lon: p.lon!, cor, texto, alerta: !!oc};
     });
   if (!pontos.length) {
     return null;
@@ -1068,11 +1131,14 @@ function MapaRegiao({dados, sinistros}: {dados: Dados; sinistros: Sinistros | nu
         <Text type="body" color="secondary">
           Pontos são as câmeras, com a cor da situação agora. Manchas vermelhas são sinistros na
           BR-101 e na Ponte somados de vários anos, maiores onde há mais. Toque para ver o
-          resumo. Posições das câmeras aproximadas.
+          resumo. No canto do mapa, mostre ou esconda câmeras e sinistros. Posições das
+          câmeras aproximadas.
         </Text>
       </VStack>
       <Suspense fallback={<Spinner label="Carregando o mapa" />}>
         <Mapa
+          id={ID_MAPA}
+          foco={foco}
           pontos={pontos}
           areas={(sinistros?.prf.trechos ?? [])
             .filter(t => t.lat != null && t.lon != null)
@@ -1103,6 +1169,14 @@ function MapaRegiao({dados, sinistros}: {dados: Dados; sinistros: Sinistros | nu
             <Text type="body">{nome}</Text>
           </HStack>
         ))}
+        {aoVivo && (
+          <HStack gap={2} vAlign="center">
+            <svg width="16" height="16" aria-hidden="true">
+              <circle cx={8} cy={8} r={5} fill="#7a828c" stroke="#f5b400" strokeWidth={3} />
+            </svg>
+            <Text type="body">Contorno amarelo: ocorrência agora (acidente, enguiço ou bloqueio)</Text>
+          </HStack>
+        )}
       </HStack>
       <Text type="body" color="secondary">
         Só as 2 câmeras da Jansen de Melo são contadas, e essa contagem ainda não foi conferida
@@ -1441,6 +1515,8 @@ const intervalo = (min: number) =>
 function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
   const st = statusDoPonto(p, dados.situacao?.[p.id]);
   const bus = dados.onibus?.[p.id];
+  const t = dados.tendencia?.[p.id];
+  const porHora = (v: number | null) => (v == null ? 'sem dado' : numero.format(v));
   return (
     <VStack gap={1}>
       <HStack gap={2} vAlign="center">
@@ -1452,6 +1528,16 @@ function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
       <Heading level={4} accessibilityLevel={3}>
         {st.texto}
       </Heading>
+      {t && t.m15 != null && (
+        <VStack gap={0}>
+          <Text type="body">
+            {`Movimento: ${numero.format(t.m15)} veículos/h nos últimos 15 min${t.direcao ? `, ${DIRECAO[t.direcao]}` : ''}`}
+          </Text>
+          <Text type="body" color="secondary">
+            {`Últimos 30 min: ${porHora(t.m30)} · 60 min: ${porHora(t.m60)}`}
+          </Text>
+        </VStack>
+      )}
       {bus && bus.por_hora > 0 && bus.intervalo_min != null && (
         <Text type="body" color="secondary">
           {`Ônibus na última hora: ~${numero.format(bus.por_hora)} (${intervalo(bus.intervalo_min)}), estimativa`}
@@ -1476,7 +1562,9 @@ function Regiao({dados}: {dados: Dados}) {
           Agora, ponto a ponto
         </Heading>
         <Text type="body" color="secondary">
-          Últimos 15 minutos comparados com o habitual do mesmo tipo de dia e da mesma hora, na mesma câmera.
+          Últimos 15 minutos comparados com o habitual do mesmo tipo de dia e da mesma hora, na
+          mesma câmera. O movimento soma os dois sentidos e diz se está subindo ou descendo em
+          relação aos 45 minutos anteriores, sem depender do habitual.
         </Text>
       </VStack>
       <Grid columns={{minWidth: 260, repeat: 'fit'}} gap={4}>
@@ -1698,6 +1786,14 @@ export default function Painel() {
   const {dados, erro, agora} = useDados();
   const sinistros = useSinistros();
   const [vista, setVista] = useState<Vista>('agora');
+  const [foco, setFoco] = useState<FocoMapa | null>(null);
+  const noMapa = Object.fromEntries(
+    (dados?.regiao ?? []).filter(p => p.lat != null && p.lon != null).map(p => [p.nome, p.id]),
+  );
+  const verNoMapa = (id: string) => {
+    setFoco({id, vez: Date.now()});
+    document.getElementById(ID_MAPA)?.scrollIntoView({behavior: 'smooth', block: 'center'});
+  };
   return (
     <Layout
       height="fill"
@@ -1713,6 +1809,10 @@ export default function Painel() {
                 <Text type="body" color="secondary">
                   Ilha da Conceição, Fonseca, Jansen de Melo e Centro, medidos pelas câmeras
                   públicas da NitTrans.
+                </Text>
+                <Text type="body" color="secondary">
+                  Internet fraca? <Link href="texto.html">Versão só texto</Link>, sem gráficos
+                  nem mapa.
                 </Text>
               </VStack>
               {dados && <Estado dados={dados} agora={agora} />}
@@ -1748,7 +1848,11 @@ export default function Painel() {
                     <Veredito dados={dados} />
                     {dados.veredito?.nivel !== 'pausado' && <Regiao dados={dados} />}
                     <Grid columns={{minWidth: 320, repeat: 'fit'}} gap={4}>
-                      <Ocorrencias lista={dados.ocorrencias ?? []} />
+                      <Ocorrencias
+                        lista={dados.ocorrencias ?? []}
+                        noMapa={noMapa}
+                        aoVerNoMapa={verNoMapa}
+                      />
                       <CamerasPublicas regiao={dados.regiao ?? []} />
                     </Grid>
                   </>
@@ -1758,7 +1862,7 @@ export default function Painel() {
                     {vista === '7d' && <Historico dados={dados} />}
                   </>
                 )}
-                <MapaRegiao dados={dados} sinistros={sinistros} />
+                <MapaRegiao dados={dados} sinistros={sinistros} foco={foco} />
                 {sinistros && <PontosCriticos s={sinistros} />}
                 <AntesEDepois lista={dados.antes_depois ?? []} />
                 <Divider />

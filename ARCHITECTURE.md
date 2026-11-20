@@ -114,6 +114,12 @@ Painel (revisto após a análise crítica de 19/11): com a coleta parada, o `Ver
 
 `itens_feed` transforma períodos encerrados (fim há mais de 15 min) e ocorrências publicáveis em textos curtos com id estável (`periodo-<início>`, `ocorrencia-<câmera>-<início>`), para o mesmo fato não virar dois posts. `feed` monta RSS 2.0 com `xml.etree` (biblioteca padrão). `exportar` grava `painel/public/feed.xml` ao lado de `dados.json` e envia os dois no mesmo `scp`. A página aponta o feed no `<head>` (`rel="alternate"`) e no texto do histórico.
 
+### Tendência e versão só texto (`exportar.tendencia` e `exportar.texto_simples`, desde 19/11/2026)
+
+`tendencia` dá, por câmera contada, veículos por hora nos últimos 15, 30 e 60 min e a direção (últimos 15 contra os 45 anteriores, ±15%), só com clipes do mesmo detector do mais recente, como `montar_base`. `texto_simples` gera `texto.html` (HTML puro, sem JavaScript, `noindex`) com veredito, pontos, movimento e ocorrências; `exportar` grava e envia junto com `dados.json`.
+
+No mapa (`painel/src/Mapa.tsx`): câmeras e sinistros são camadas do controle nativo do Leaflet; `foco` (vindo do botão "Ver no mapa" de uma ocorrência) centraliza e abre o balão; `alerta` desenha o contorno amarelo da ocorrência em andamento sem trocar a cor da situação.
+
 ### Guardar história (`historia.py` e `coletor.passagens`, desde 19/11/2026)
 
 | Função | Responsabilidade |

@@ -10,7 +10,10 @@ export interface PontoMapa {
   lon: number;
   cor: string; // hex: o Leaflet escreve a cor como atributo SVG, que não lê var() do tema
   texto: string;
+  alerta?: boolean; // ocorrência em andamento: contorno amarelo, a cor de dentro segue a situação
 }
+
+const AMARELO_ALERTA = '#f5b400';
 
 const escapar = (s: string) =>
   s.replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]!);
@@ -26,19 +29,33 @@ export interface AreaMapa {
   texto: string;
 }
 
+// foco: câmera a centralizar e abrir (vem de "ver no mapa" numa ocorrência); `vez` muda a
+// cada clique, para repetir o foco na mesma câmera.
+export interface FocoMapa {
+  id: string;
+  vez: number;
+}
+
 export default function Mapa({
   pontos,
   areas = [],
   descricao,
+  foco = null,
+  id,
 }: {
   pontos: PontoMapa[];
   areas?: AreaMapa[];
   descricao: string;
+  foco?: FocoMapa | null;
+  id?: string; // âncora para a página rolar até o mapa
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const mapaRef = useRef<L.Map | null>(null);
+  const marcasRef = useRef<Record<string, L.CircleMarker>>({});
+  const camerasRef = useRef<L.LayerGroup | null>(null);
   const chave = JSON.stringify([pontos, areas]); // recria o mapa só se os dados mudarem
   useEffect(() => {
-    if (!ref.current || !pontos.length) {
+    if (!ref.current || (!pontos.length && !areas.length)) {
       return;
     }
     const mapa = L.map(ref.current, {
@@ -52,9 +69,12 @@ export default function Mapa({
         '&copy; <a href="https://www.openstreetmap.org/copyright">colaboradores do OpenStreetMap</a>',
       maxZoom: 19,
     }).addTo(mapa);
-    // Sinistros primeiro: ficam por baixo das câmeras.
+    // Sinistros primeiro: ficam por baixo das câmeras. Cada grupo é uma camada que a pessoa
+    // liga e desliga pelo controle nativo do Leaflet, no canto do mapa.
+    const todas: L.CircleMarker[] = [];
+    const sinistros = L.layerGroup().addTo(mapa);
     for (const a of areas) {
-      L.circleMarker([a.lat, a.lon], {
+      const m = L.circleMarker([a.lat, a.lon], {
         radius: 6 + 2.2 * Math.sqrt(a.sinistros),
         stroke: false,
         fillColor: '#b42318',
@@ -62,13 +82,16 @@ export default function Mapa({
       })
         .bindTooltip(a.nome, {direction: 'top'})
         .bindPopup(`<strong>${escapar(a.nome)}</strong><br>${escapar(a.texto)}`)
-        .addTo(mapa);
+        .addTo(sinistros);
+      todas.push(m);
     }
-    const marcas = pontos.map(p =>
-      L.circleMarker([p.lat, p.lon], {
-        radius: 11,
-        color: '#ffffff',
-        weight: 3,
+    const cameras = L.layerGroup().addTo(mapa);
+    marcasRef.current = {};
+    for (const p of pontos) {
+      const m = L.circleMarker([p.lat, p.lon], {
+        radius: p.alerta ? 12 : 11,
+        color: p.alerta ? AMARELO_ALERTA : '#ffffff',
+        weight: p.alerta ? 6 : 3,
         fillColor: p.cor,
         fillOpacity: 1,
       })
@@ -76,19 +99,49 @@ export default function Mapa({
         .bindPopup(
           `<strong>${escapar(p.nome)}</strong><br>${escapar(p.texto)}<br><small>Posição aproximada</small>`,
         )
-        .addTo(mapa),
-    );
-    mapa.fitBounds(L.featureGroup(marcas).getBounds(), {padding: [36, 36]});
+        .addTo(cameras);
+      marcasRef.current[p.id] = m;
+      todas.push(m);
+    }
+    const camadas: Record<string, L.Layer> = {};
+    if (pontos.length) {
+      camadas['Câmeras'] = cameras;
+    }
+    if (areas.length) {
+      camadas['Sinistros (PRF)'] = sinistros;
+    }
+    if (Object.keys(camadas).length > 1) {
+      // aberto no computador; no celular vira um ícone que abre ao tocar, para não cobrir o mapa
+      L.control.layers(undefined, camadas, {collapsed: mapa.getSize().x < 500}).addTo(mapa);
+    }
+    mapa.fitBounds(L.featureGroup(todas).getBounds(), {padding: [36, 36]});
+    mapaRef.current = mapa;
+    camerasRef.current = cameras;
     return () => {
       mapa.remove();
+      mapaRef.current = null;
+      camerasRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chave]);
+  useEffect(() => {
+    const m = foco && marcasRef.current[foco.id];
+    const mapa = mapaRef.current;
+    if (m && mapa) {
+      // pediu para ver a câmera: religa a camada se a pessoa tinha desligado
+      if (camerasRef.current && !mapa.hasLayer(camerasRef.current)) {
+        camerasRef.current.addTo(mapa);
+      }
+      mapa.setView(m.getLatLng(), 16);
+      m.openPopup();
+    }
+  }, [foco, chave]);
   // O Leaflet precisa de um elemento DOM próprio para desenhar; não há componente
   // equivalente no Astryx.
   return (
     <div
       ref={ref}
+      id={id}
       role="region"
       aria-label={descricao}
       style={{height: 380, width: '100%', borderRadius: 12, overflow: 'hidden', position: 'relative', zIndex: 0}}

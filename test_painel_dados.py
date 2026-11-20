@@ -372,3 +372,40 @@ def test_base_do_habitual_so_usa_clipes_do_mesmo_detector():
     # com o mesmo detector, a base antiga continua valendo
     mesmo = {**hoje, "config": "yolo11n|{}"}
     assert len(montar_base(antigo + [mesmo])["000018"][(True, 17)]["oc"]) == 40
+
+
+def test_tendencia_sobe_desce_e_exige_video():
+    from exportar import tendencia
+
+    def serie(antes, agora):  # um clipe por minuto: 45 min antes com `antes` carros, 15 com `agora`
+        return [{**_clipe("000018", m), "desce": agora if m < 15 else antes} for m in range(0, 60)]
+
+    t = tendencia(serie(10, 20), AGORA)["000018"]
+    assert t["direcao"] == "subindo" and t["m15"] == 1200 and t["m60"] == 750
+    assert tendencia(serie(20, 10), AGORA)["000018"]["direcao"] == "descendo"
+    assert tendencia(serie(10, 11), AGORA)["000018"]["direcao"] == "estavel"
+    # troca de detector há 15 min: o antigo contava menos, e isso não vira "subindo"
+    troca = [{**c, "config": "novo" if i < 15 else "antigo"} for i, c in enumerate(serie(10, 20))]
+    assert tendencia(troca, AGORA)["000018"]["direcao"] is None
+    pouco = [{**_clipe("000018", m), "desce": 5} for m in range(0, 5)]  # só 5 min de vídeo
+    assert tendencia(pouco, AGORA)["000018"]["direcao"] is None
+    assert "000026" not in tendencia(pouco, AGORA)
+
+
+def test_texto_simples_tem_o_essencial_e_escapa_html():
+    from exportar import texto_simples
+
+    dados = {
+        "gerado_utc": AGORA,
+        "veredito": {"nivel": "ok", "texto": "Trânsito <b>normal</b>."},
+        "situacao": {"000018": {"nivel": "pesado"}},
+        "tendencia": {"000018": {"m15": 900, "m30": 800, "m60": 700, "direcao": "subindo"}},
+        "ocorrencias": [
+            {"tipo": "enguico", "camera": "Jansen x Mal. Deodoro", "inicio_utc": AGORA}
+        ],
+    }
+    html = texto_simples(dados)
+    assert "&lt;b&gt;normal&lt;/b&gt;" in html and "<b>normal" not in html
+    assert "Jansen x Mal. Deodoro: acima do habitual. Movimento: 900 veículos/h" in html
+    assert "veículo enguiçado em Jansen x Mal. Deodoro desde 18h00" in html
+    assert "Atualizado em 19/11 às 18h00" in html and "<script" not in html

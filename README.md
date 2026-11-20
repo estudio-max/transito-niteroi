@@ -10,7 +10,7 @@ Documentação do projeto: `REQUIREMENTS.md` (o que faz e as regras), `ARCHITECT
 
 ## Dados abertos
 
-O site publica, a cada 5 minutos de coleta: `dados.json` (o que o painel mostra), `feed.xml` (RSS com um texto pronto por período e por ocorrência, para ligar a redes sociais) e `dados-por-hora.csv` (uma linha por câmera e hora, com a chuva). Os sinistros vêm da PRF (dados abertos) e de uma tabela da NitTrans publicada só como imagem e transcrita em `dados-externos/`.
+O site publica, a cada 5 minutos de coleta: `dados.json` (o que o painel mostra), `feed.xml` (RSS com um texto pronto por período e por ocorrência, para ligar a redes sociais), `texto.html` (versão só texto, sem JavaScript, para internet fraca) e `dados-por-hora.csv` (uma linha por câmera e hora, com a chuva). Os sinistros vêm da PRF (dados abertos) e de uma tabela da NitTrans publicada só como imagem e transcrita em `dados-externos/`.
 
 ## Contribuir
 
