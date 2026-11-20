@@ -34,8 +34,12 @@ SENTIDOS = ("desce", "sobe")  # na imagem, com a linha A→B da esquerda p/ dire
 CAMERAS = {
     "000026": {
         "nome": "Jansen sent. Ponte",
-        "linha": ((290, 300), (590, 300)),
-        # só se vê o fluxo que se afasta da câmera, que pelo nome é o sentido Ponte
+        # A câmera gira: até 13/11 via só a pista que se afasta, com a linha (290, 300)-(590,
+        # 300); de 16/11 em diante mostra as duas pistas com canteiro, e aquela linha cortava
+        # só um pedaço de cada sentido (vindo para a câmera, ~1/3). Linha nova em 20/11/2026
+        # atravessa as duas pistas inteiras. Se a câmera girar de novo, recalibrar.
+        "linha": ((95, 300), (640, 300)),
+        # desce = vem para a câmera, sobe = se afasta; qual é o sentido Ponte não foi conferido
         "sentido_confirmado": False,
     },
     "000018": {

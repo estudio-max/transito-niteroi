@@ -30,6 +30,20 @@ def _num(texto):
         return None
 
 
+def categoria(tipo):
+    """Agrupa o tipo_acidente da PRF (cerca de 15 valores) em 5 categorias para leigo."""
+    t = tipo.strip().lower()
+    if t.startswith(("colis", "engavetamento")):
+        return "colisao"
+    if t.startswith("atropelamento"):
+        return "atropelamento"
+    if t.startswith("queda"):  # "Queda de ocupante de veículo": quase sempre moto
+        return "queda"
+    if t.startswith(("tombamento", "capotamento", "saída de leito", "saida de leito")):
+        return "tombamento"
+    return "outros"
+
+
 def ler_prf(pasta=PASTA_PRF):
     """Boletins de Niterói de todos os ZIPs da pasta, com campos já convertidos."""
     registros = []
@@ -47,6 +61,8 @@ def ler_prf(pasta=PASTA_PRF):
                     "km": int(_num(r["km"]) or 0),
                     "mortos": int(r["mortos"] or 0),
                     "feridos_graves": int(r["feridos_graves"] or 0),
+                    "feridos": int(r.get("feridos") or 0),  # leves + graves
+                    "categoria": categoria(r.get("tipo_acidente") or ""),
                     "lat": lat if lat and LAT[0] <= lat <= LAT[1] else None,
                     "lon": lon if lon and LON[0] <= lon <= LON[1] else None,
                 }
@@ -100,6 +116,18 @@ def trechos(registros):
         coords = [(r["lat"], r["lon"]) for r in g if r["lat"] and r["lon"]]
         mortos = sum(r["mortos"] for r in g)
         graves = sum(r["feridos_graves"] for r in g)
+        # por categoria, para o painel filtrar por tipo e gravidade sem receber os boletins
+        grupos = {}
+        for r in g:
+            c = grupos.setdefault(
+                r.get("categoria", "outros"),
+                {"n": 0, "vitimas": 0, "fatais": 0, "mortos": 0, "feridos_graves": 0},
+            )
+            c["n"] += 1
+            c["vitimas"] += r["mortos"] + r.get("feridos", r["feridos_graves"]) > 0
+            c["fatais"] += r["mortos"] > 0
+            c["mortos"] += r["mortos"]
+            c["feridos_graves"] += r["feridos_graves"]
         saida.append(
             {
                 "nome": f"BR-{br}, km {km}",
@@ -107,6 +135,7 @@ def trechos(registros):
                 "mortos": mortos,
                 "feridos_graves": graves,
                 "graves": mortos + graves,
+                "grupos": grupos,
                 "lat": round(sum(c[0] for c in coords) / len(coords), 5) if coords else None,
                 "lon": round(sum(c[1] for c in coords) / len(coords), 5) if coords else None,
             }

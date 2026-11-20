@@ -47,6 +47,51 @@ def test_trechos_ordenados_por_gravidade():
     assert (t[1]["sinistros"], t[1]["graves"], t[1]["lat"]) == (3, 1, -22.88)
 
 
+def test_categorias_e_grupos_para_o_filtro():
+    from sinistros import categoria
+
+    assert categoria("Colisão traseira") == categoria("Engavetamento") == "colisao"
+    assert categoria("Queda de ocupante de veículo") == "queda"
+    assert categoria("Atropelamento de Pedestre") == "atropelamento"
+    assert categoria("Saída de leito carroçável") == categoria("Tombamento") == "tombamento"
+    assert categoria("Incêndio") == categoria("") == "outros"
+
+    def r(cat, mortos=0, graves=0, feridos=0):
+        return {
+            "br": "101",
+            "km": 321,
+            "lat": -22.87,
+            "lon": -43.11,
+            "categoria": cat,
+            "mortos": mortos,
+            "feridos_graves": graves,
+            "feridos": feridos,
+        }
+
+    (t,) = trechos(
+        [
+            r("colisao"),
+            r("colisao", feridos=2),
+            r("queda", mortos=1),
+            r("queda", graves=1, feridos=1),
+        ]
+    )
+    assert t["grupos"]["colisao"] == {
+        "n": 2,
+        "vitimas": 1,
+        "fatais": 0,
+        "mortos": 0,
+        "feridos_graves": 0,
+    }
+    assert t["grupos"]["queda"] == {
+        "n": 2,
+        "vitimas": 2,
+        "fatais": 1,
+        "mortos": 1,
+        "feridos_graves": 1,
+    }
+
+
 def test_transcricao_da_nittrans_soma_certo():
     vias = ler_nittrans()
     assert len(vias) == 30 and vias[1]["via"] == "Alameda São Boaventura"

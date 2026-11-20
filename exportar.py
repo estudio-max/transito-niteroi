@@ -46,7 +46,10 @@ def ler(db, desde_utc):
     )
     cur = db.execute(
         "SELECT camera, clipe_utc, duracao_s, ocupacao,"
-        f" COALESCE(modelo, '') || '|' || COALESCE(detector, '') AS config, {somas}, {tipos}"
+        # config = detector e linha de contagem: o habitual e a tendência só comparam clipes
+        # medidos do mesmo jeito (trocar qualquer um dos dois muda a contagem)
+        " COALESCE(modelo, '') || '|' || COALESCE(detector, '') || '|' || COALESCE(linha, '')"
+        f" AS config, {somas}, {tipos}"
         " FROM clipes"
         " WHERE clipe_utc >= ? ORDER BY clipe_utc",
         (desde_utc,),
@@ -438,8 +441,14 @@ def tendencia(historico, agora_utc):
         if cobre(ult15, 15) and cobre(antes, 45, inicio=15):
             razao = _fluxo_h(ult15) / max(_fluxo_h(antes), 1)
             direcao = "subindo" if razao > 1.15 else "descendo" if razao < 0.85 else "estavel"
+        dur15 = sum(c["duracao_s"] for c in ult15)
         saida[cam] = {
             "m15": _fluxo_h(ult15),
+            # o mesmo movimento dos últimos 15 min separado por tipo (veículos/h)
+            "tipos": {
+                v: round(sum(c.get(v, 0) for c in ult15) * 3600 / dur15) if dur15 else 0
+                for v in VEICULOS.values()
+            },
             "m30": _fluxo_h(ult30) if cobre(ult30, 30) else None,
             "m60": _fluxo_h(ult60) if cobre(ult60, 60) else None,
             "direcao": direcao,
@@ -868,11 +877,12 @@ def csv_por_hora(db):
         "SELECT strftime('%Y-%m-%d %H:00', c.clipe_utc, '-3 hours') AS hora_local, c.camera,"
         f" ROUND(SUM(c.duracao_s) / 60.0, 1), {somas},"
         " COALESCE(substr(c.modelo, 1, instr(c.modelo || '@', '@') - 1), '') || ' '"
-        " || COALESCE(c.detector, ''),"
+        " || COALESCE(c.detector, '')"
+        " || CASE WHEN c.linha IS NULL THEN '' ELSE ' linha ' || c.linha END,"
         " ROUND(AVG(c.ocupacao), 2), MAX(k.chuva_mm)"
         " FROM clipes c LEFT JOIN clima k"
         " ON k.hora_utc = strftime('%Y-%m-%dT%H:00:00', c.clipe_utc) || '+00:00'"
-        " GROUP BY hora_local, c.camera, c.modelo, c.detector"
+        " GROUP BY hora_local, c.camera, c.modelo, c.detector, c.linha"
         " ORDER BY hora_local, c.camera"
     ).fetchall()
     nomes = {cam["id"]: cam["nome"] for cam in REGIAO}

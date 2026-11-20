@@ -7,6 +7,7 @@ import {Banner} from '@astryxdesign/core/Banner';
 import {Badge} from '@astryxdesign/core/Badge';
 import {Collapsible} from '@astryxdesign/core/Collapsible';
 import {SegmentedControl, SegmentedControlItem} from '@astryxdesign/core/SegmentedControl';
+import {Selector} from '@astryxdesign/core/Selector';
 import {EmptyState} from '@astryxdesign/core/EmptyState';
 import {Spinner} from '@astryxdesign/core/Spinner';
 import {StatusDot} from '@astryxdesign/core/StatusDot';
@@ -139,6 +140,7 @@ type Nivel = 'livre' | 'moderado' | 'pesado';
 // os últimos 15 com os 45 anteriores (exportar.tendencia). Não depende do habitual.
 interface Tendencia {
   m15: number | null;
+  tipos?: Record<string, number>; // veículos/h de cada tipo nos últimos 15 min
   m30: number | null;
   m60: number | null;
   direcao: 'subindo' | 'estavel' | 'descendo' | null;
@@ -161,6 +163,7 @@ interface Sinistros {
       mortos: number;
       feridos_graves: number;
       graves: number;
+      grupos?: Record<string, GrupoSinistro>; // por categoria (sinistros.categoria)
       lat: number | null;
       lon: number | null;
     }>;
@@ -170,6 +173,89 @@ interface Sinistros {
     url: string;
     vias: Array<{via: string; '2024': number; '2025': number; '2026': number; total: number}>;
   };
+}
+
+interface GrupoSinistro {
+  n: number;
+  vitimas: number; // sinistros com ferido ou morto
+  fatais: number; // sinistros com morto
+  mortos: number;
+  feridos_graves: number;
+}
+
+// Filtro dos sinistros da PRF (mapa e ranking). A tabela da NitTrans não tem tipo nem gravidade.
+type Gravidade = 'todos' | 'vitimas' | 'fatais';
+interface FiltroSinistros {
+  gravidade: Gravidade;
+  tipo: string; // 'todos' ou uma chave de CATEGORIAS
+}
+// Rótulos curtos: os três cabem no celular sem cortar ("Vítimas" = feridos ou mortos).
+const GRAVIDADES: Array<[Gravidade, string]> = [
+  ['todos', 'Todos'],
+  ['vitimas', 'Vítimas'],
+  ['fatais', 'Mortes'],
+];
+const CATEGORIAS: Array<[string, string]> = [
+  ['colisao', 'Colisões'],
+  ['queda', 'Quedas de moto e de ocupantes'],
+  ['atropelamento', 'Atropelamentos'],
+  ['tombamento', 'Tombamentos e saídas de pista'],
+  ['outros', 'Outros (incêndio, carga, etc.)'],
+];
+const ROTULO_GRAVIDADE: Record<Gravidade, [string, string]> = {
+  todos: ['sinistro', 'sinistros'],
+  vitimas: ['sinistro com vítimas', 'sinistros com vítimas'],
+  fatais: ['sinistro com morte', 'sinistros com mortes'],
+};
+
+// Trechos da PRF com o que o filtro escolhe: quantos sinistros, mortos e feridos graves.
+// Sem `grupos` (sinistros.json antigo), só o filtro "todos/todos" tem dado.
+function trechosFiltrados(s: Sinistros, f: FiltroSinistros) {
+  return s.prf.trechos
+    .map(t => {
+      const grupos = Object.entries(t.grupos ?? {}).filter(([k]) => f.tipo === 'todos' || k === f.tipo);
+      const soma = (campo: keyof GrupoSinistro) => grupos.reduce((a, [, g]) => a + g[campo], 0);
+      const valor = f.gravidade === 'todos' ? soma('n') : soma(f.gravidade);
+      // Os feridos graves por categoria incluem sinistros sem morte: no filtro "com mortes"
+      // ficam de fora, para não parecerem vítimas dos sinistros fatais.
+      const feridos_graves: number | null = f.gravidade === 'fatais' ? null : soma('feridos_graves');
+      return t.grupos
+        ? {...t, valor, mortos: soma('mortos'), feridos_graves}
+        : {...t, valor: f.gravidade === 'todos' && f.tipo === 'todos' ? t.sinistros : 0};
+    })
+    .filter(t => t.valor > 0)
+    .sort(
+      (a, b) =>
+        b.mortos + (b.feridos_graves ?? 0) - (a.mortos + (a.feridos_graves ?? 0)) || b.valor - a.valor,
+    );
+}
+
+const vitimasTexto = (t: {mortos: number; feridos_graves: number | null}) =>
+  `${t.mortos} ${t.mortos === 1 ? 'morto' : 'mortos'}${t.feridos_graves == null ? '' : ` e ${t.feridos_graves} feridos graves`}`;
+
+const descricaoFiltro = (f: FiltroSinistros, n = 2) =>
+  `${ROTULO_GRAVIDADE[f.gravidade][n === 1 ? 0 : 1]}${f.tipo === 'todos' ? '' : ` · ${CATEGORIAS.find(([k]) => k === f.tipo)?.[1].toLowerCase()}`}`;
+
+function FiltroDeSinistros({filtro, aoMudar}: {filtro: FiltroSinistros; aoMudar: (f: FiltroSinistros) => void}) {
+  return (
+    <Grid columns={{minWidth: 260, repeat: 'fit'}} gap={3}>
+      <SegmentedControl
+        value={filtro.gravidade}
+        onChange={v => aoMudar({...filtro, gravidade: v as Gravidade})}
+        label="Gravidade dos sinistros"
+        layout="fill">
+        {GRAVIDADES.map(([v, nome]) => (
+          <SegmentedControlItem key={v} value={v} label={nome} />
+        ))}
+      </SegmentedControl>
+      <Selector
+        label="Tipo de sinistro"
+        value={filtro.tipo}
+        onChange={v => aoMudar({...filtro, tipo: v ?? 'todos'})}
+        options={[{value: 'todos', label: 'Todos os tipos'}, ...CATEGORIAS.map(([value, label]) => ({value, label}))]}
+      />
+    </Grid>
+  );
 }
 
 function useSinistros() {
@@ -969,8 +1055,9 @@ const frequencia = (total: number) => {
   return dias < 1.5 ? `cerca de ${Math.round(total / DIAS_NITTRANS)} por dia` : `cerca de 1 a cada ${Math.round(dias)} dias`;
 };
 
-function PontosCriticos({s}: {s: Sinistros}) {
-  const graves = s.prf.trechos.slice(0, 5);
+function PontosCriticos({s, filtro}: {s: Sinistros; filtro: FiltroSinistros}) {
+  const graves = trechosFiltrados(s, filtro).slice(0, 5);
+  const filtrado = filtro.gravidade !== 'todos' || filtro.tipo !== 'todos';
   const anosPrf = s.prf.anos.length === 2 ? s.prf.anos[1] - s.prf.anos[0] + 1 : 1;
   const vias = s.nittrans.vias.slice(0, 10);
   return (
@@ -993,14 +1080,22 @@ function PontosCriticos({s}: {s: Sinistros}) {
           titulo={`BR-101 e Ponte: trechos mais graves em ${anosPrf} anos`}
           apoio={`Soma de ${s.prf.anos.join(' a ')} (${s.prf.anos[1]} até agora), por quilômetro, ordenada por mortos mais feridos graves. Em Niterói, no período: ${numero.format(s.prf.total_sinistros)} sinistros, ${s.prf.total_mortos} mortos e ${s.prf.total_feridos_graves} feridos graves, cerca de ${Math.round(s.prf.total_mortos / anosPrf)} mortes por ano. ${s.prf.fora_do_mapa} boletins com rodovia, km ou coordenada incoerente ficaram fora do ranking e do mapa. Fonte: PRF, dados abertos.`}>
           <VStack gap={3}>
+            {filtrado && (
+              <Badge label={`Filtro do mapa: ${descricaoFiltro(filtro)}`} variant="neutral" />
+            )}
             {graves.map((t, i) => (
               <VStack key={t.nome} gap={0}>
                 <Text type="body" weight="semibold">{`${i + 1}. ${t.nome}`}</Text>
                 <Text type="body" color="secondary">
-                  {`${t.mortos} ${t.mortos === 1 ? 'morto' : 'mortos'} e ${t.feridos_graves} feridos graves em ${t.sinistros} sinistros, em ${anosPrf} anos`}
+                  {`${vitimasTexto(t)} em ${t.valor} ${descricaoFiltro(filtro, t.valor)}, em ${anosPrf} anos`}
                 </Text>
               </VStack>
             ))}
+            {!graves.length && (
+              <Text type="body" color="secondary">
+                Nenhum sinistro com esse filtro no período.
+              </Text>
+            )}
           </VStack>
         </ChartCard>
         <ChartCard
@@ -1097,10 +1192,14 @@ function MapaRegiao({
   dados,
   sinistros,
   foco,
+  filtro,
+  aoFiltrar,
 }: {
   dados: Dados;
   sinistros: Sinistros | null;
   foco: FocoMapa | null;
+  filtro: FiltroSinistros;
+  aoFiltrar: (f: FiltroSinistros) => void;
 }) {
   const aoVivo = dados.veredito?.nivel !== 'pausado';
   const ultimo = dados.periodos?.[0];
@@ -1152,23 +1251,25 @@ function MapaRegiao({
         <Text type="body" color="secondary">
           Pontos são as câmeras, com a cor da situação agora. Manchas vermelhas são sinistros na
           BR-101 e na Ponte somados de vários anos, maiores onde há mais. Toque para ver o
-          resumo. No canto do mapa, mostre ou esconda câmeras e sinistros. Posições das
+          resumo. No canto do mapa, mostre ou esconda câmeras e sinistros; abaixo, filtre os
+          sinistros por gravidade e tipo (vale também para o ranking da PRF). Posições das
           câmeras aproximadas.
         </Text>
       </VStack>
+      {sinistros && <FiltroDeSinistros filtro={filtro} aoMudar={aoFiltrar} />}
       <Suspense fallback={<Spinner label="Carregando o mapa" />}>
         <Mapa
           id={ID_MAPA}
           foco={foco}
           pontos={pontos}
-          areas={(sinistros?.prf.trechos ?? [])
+          areas={(sinistros ? trechosFiltrados(sinistros, filtro) : [])
             .filter(t => t.lat != null && t.lon != null)
             .map(t => ({
               nome: t.nome,
               lat: t.lat!,
               lon: t.lon!,
-              sinistros: t.sinistros,
-              texto: `${t.sinistros} sinistros, ${t.mortos} mortos e ${t.feridos_graves} feridos graves de ${sinistros!.prf.anos.join(' a ')} (PRF).`,
+              sinistros: t.valor,
+              texto: `${t.valor} ${descricaoFiltro(filtro, t.valor)}, com ${vitimasTexto(t)}, de ${sinistros!.prf.anos.join(' a ')} (PRF).`,
             }))}
           descricao={`Mapa da saída da Ponte com ${pontos.length} câmeras: ${pontos.map(p => p.nome).join(', ')}.`}
         />
@@ -1179,7 +1280,7 @@ function MapaRegiao({
             <svg width="16" height="16" aria-hidden="true">
               <circle cx={8} cy={8} r={7} fill="#b42318" fillOpacity={0.35} />
             </svg>
-            <Text type="body">Sinistros na BR-101 e na Ponte, soma de 2022 a 2026 (PRF)</Text>
+            <Text type="body">{`BR-101 e Ponte, ${descricaoFiltro(filtro)}, soma de 2022 a 2026 (PRF)`}</Text>
           </HStack>
         )}
         {legenda.map(([cor, nome]) => (
@@ -1569,6 +1670,11 @@ function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
               {`Últimos ${janelas.join(' · ')}`}
             </Text>
           )}
+          {t.tipos && (
+            <Text type="body" color="secondary">
+              {`Por tipo, por hora: ${TIPOS.map(([k, nome]) => `${nome.toLowerCase()} ${numero.format(t.tipos![k] ?? 0)}`).join(' · ')}`}
+            </Text>
+          )}
         </VStack>
       )}
       {bus && bus.por_hora > 0 && bus.intervalo_min != null && (
@@ -1820,6 +1926,7 @@ export default function Painel() {
   const sinistros = useSinistros();
   const [vista, setVista] = useState<Vista>('agora');
   const [foco, setFoco] = useState<FocoMapa | null>(null);
+  const [filtroSin, setFiltroSin] = useState<FiltroSinistros>({gravidade: 'todos', tipo: 'todos'});
   const noMapa = Object.fromEntries(
     (dados?.regiao ?? []).filter(p => p.lat != null && p.lon != null).map(p => [p.nome, p.id]),
   );
@@ -1895,8 +2002,14 @@ export default function Painel() {
                     {vista === '7d' && <Historico dados={dados} />}
                   </>
                 )}
-                <MapaRegiao dados={dados} sinistros={sinistros} foco={foco} />
-                {sinistros && <PontosCriticos s={sinistros} />}
+                <MapaRegiao
+                  dados={dados}
+                  sinistros={sinistros}
+                  foco={foco}
+                  filtro={filtroSin}
+                  aoFiltrar={setFiltroSin}
+                />
+                {sinistros && <PontosCriticos s={sinistros} filtro={filtroSin} />}
                 <AntesEDepois lista={dados.antes_depois ?? []} />
                 <Divider />
                 <Collapsible

@@ -78,6 +78,8 @@ Depois de mudar o código do painel, compile, verifique e envie:
 cd painel && npm run build && npx astryx doctor --built dist && scp -r dist/. hostgator-fanara:transito.fanara.com.br/
 ```
 
+O `dist/` leva uma cópia de `dados.json`; se o coletor estiver rodando, a versão mais nova volta na próxima publicação dele (até 5 min).
+
 Para ver o painel localmente: `uv run exportar.py` e depois `npm run dev` dentro de `painel/`. Verificações do painel: `npm run lint` e `npm run build` (inclui a checagem de tipos).
 
 ## Validar a contagem (fase 2)

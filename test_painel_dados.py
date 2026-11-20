@@ -285,6 +285,24 @@ def test_clima_grava_so_horas_passadas():
     ]
 
 
+def test_config_do_clipe_separa_a_linha_de_contagem():
+    """Trocar a linha muda a contagem: habitual e tendência não podem misturar as duas."""
+    from collections import Counter
+
+    from coletor import abrir_banco, gravar
+    from exportar import ler
+
+    db = abrir_banco(":memory:")
+    for i, linha in enumerate(("((290, 300), (590, 300))", "((95, 300), (640, 300))")):
+        parametros = {"modelo": "m.pt", "passo": 1, "linha": linha, "detector": "{}"}
+        gravar(
+            db, "000026", f"2026-11-19T20:0{i}:00+00:00", 60, 1.0, Counter(carro_sobe=3), parametros
+        )
+    antes, depois = ler(db, "2026-11-19T00:00:00+00:00")
+    assert antes["config"] != depois["config"]
+    assert depois["config"] == "m.pt|{}|((95, 300), (640, 300))"
+
+
 def test_csv_por_hora_soma_por_camera_e_junta_a_chuva():
     from coletor import abrir_banco, gravar
     from exportar import csv_por_hora
@@ -382,6 +400,14 @@ def test_tendencia_sobe_desce_e_exige_video():
 
     t = tendencia(serie(10, 20), AGORA)["000018"]
     assert t["direcao"] == "subindo" and t["m15"] == 1200 and t["m60"] == 750
+    # por tipo, no mesmo período e na mesma unidade do movimento
+    misto = [{**c, "carro": 18, "moto": 2} for c in serie(10, 20)]
+    assert tendencia(misto, AGORA)["000018"]["tipos"] == {
+        "carro": 1080,
+        "moto": 120,
+        "onibus": 0,
+        "caminhao": 0,
+    }
     assert tendencia(serie(20, 10), AGORA)["000018"]["direcao"] == "descendo"
     assert tendencia(serie(10, 11), AGORA)["000018"]["direcao"] == "estavel"
     # troca de detector há 15 min: o antigo contava menos, e isso não vira "subindo"

@@ -116,11 +116,13 @@ Painel (revisto após a análise crítica de 19/11): com a coleta parada, o `Ver
 
 ### Tendência e versão só texto (`exportar.tendencia` e `exportar.texto_simples`, desde 19/11/2026)
 
-`tendencia` dá, por câmera contada, veículos por hora nos últimos 15, 30 e 60 min e a direção (últimos 15 contra os 45 anteriores, ±15%), só com clipes do mesmo detector do mais recente, como `montar_base`. Uma janela só vale se os clipes a cobrem de ponta a ponta (o mais antigo alcança dois terços dela) e somam um terço dela em vídeo; senão o número dela é `None` e o painel o omite. `texto_simples` gera `texto.html` (HTML puro, sem JavaScript, `noindex`) com veredito, pontos, movimento e ocorrências; `exportar` grava e envia junto com `dados.json`. O `<base target="_top">` faz o link "Painel completo" sair do `<iframe>` quando outro site incorpora a página.
+`tendencia` dá, por câmera contada, veículos por hora nos últimos 15, 30 e 60 min, os mesmos 15 min separados por tipo (`tipos`) e a direção (últimos 15 contra os 45 anteriores, ±15%), só com clipes da mesma configuração do mais recente, como `montar_base`. A configuração de um clipe (`config`, montada em `exportar.ler`) é modelo, detector e linha de contagem: trocar qualquer um muda a contagem. Uma janela só vale se os clipes a cobrem de ponta a ponta (o mais antigo alcança dois terços dela) e somam um terço dela em vídeo; senão o número dela é `None` e o painel o omite. `texto_simples` gera `texto.html` (HTML puro, sem JavaScript, `noindex`) com veredito, pontos, movimento e ocorrências; `exportar` grava e envia junto com `dados.json`. O `<base target="_top">` faz o link "Painel completo" sair do `<iframe>` quando outro site incorpora a página.
 
 Em cada ocorrência do painel, `urlAvisoErro` (`painel/src/Painel.tsx`) monta o link de uma issue nova no GitHub com título e corpo preenchidos a partir dos campos que a página já exibe.
 
 No mapa (`painel/src/Mapa.tsx`): câmeras e sinistros são camadas do controle nativo do Leaflet; `foco` (vindo do botão "Ver no mapa" de uma ocorrência) centraliza e abre o balão; `alerta` desenha o contorno amarelo da ocorrência em andamento sem trocar a cor da situação.
+
+Sinistros: `sinistros.categoria` reduz o `tipo_acidente` da PRF a 5 categorias, e cada trecho de `sinistros.json` traz `grupos` (por categoria: sinistros, com vítimas, com mortes, mortos, feridos graves). O painel filtra no navegador (`trechosFiltrados` em `Painel.tsx`), sem receber os boletins; o filtro vale para as manchas do mapa e o ranking da PRF.
 
 ### Guardar história (`historia.py` e `coletor.passagens`, desde 19/11/2026)
 
