@@ -248,6 +248,9 @@ def registrar(db, camera, clipe_utc, achados, quadros, classificar=classificar_v
         ]
         if not antes:
             continue  # primeira vez parado aqui: pode ser só o semáforo
+        # O modelo de visão leva de ~14 s a ~2 min: grava antes, para não segurar a trava de
+        # escrita do banco (e bloquear a publicação e qualquer outro programa) esse tempo todo.
+        db.commit()
         try:
             r = classificar(imagens(quadros, p), p)
         except Exception as e:  # sem chave, sem rede: o incidente fica sem classificação

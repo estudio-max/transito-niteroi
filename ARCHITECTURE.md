@@ -21,7 +21,7 @@ flowchart LR
 | `rastrear` | Detector + rastreador (Ultralytics); devolve trajetórias, ocupação média e duração |
 | `cruzou` / `contar` | Geometria pura: quem cruzou a linha, em que sentido, uma vez por trajetória |
 | `linha_do_clipe` / `enquadramento` / `descritor` | Câmera que alterna entre enquadramentos (a 000026): reconhece o enquadramento do clipe por uma miniatura 32x18 com bordas, comparada às de `enquadramentos.json`, e devolve a linha dele; câmera de um enquadramento só usa `linha` |
-| `abrir_banco` / `ja_processado` / `gravar` | Persistência |
+| `abrir_banco` / `ja_processado` / `gravar` | Persistência. Conexões com espera de 30 s pelo banco; nenhuma transação fica aberta durante uma chamada lenta (o modelo de visão): `registrar` dá `commit` antes de cada uma |
 | `main` | Laço, argumentos, tolerância a falha por câmera |
 
 ### Incidentes (`incidentes.py`, desde 18/11/2026)

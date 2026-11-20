@@ -708,7 +708,7 @@ def montar(
 
 def exportar(banco="fluxo.db", saida=SAIDA, enviar=None):
     agora = datetime.now(UTC)
-    db = sqlite3.connect(banco)
+    db = sqlite3.connect(banco, timeout=30)
     desde_janela = (agora - timedelta(hours=JANELA_H)).isoformat()
     historico = ler(db, (agora - timedelta(days=COBERTURA_DIAS + 1)).isoformat())
     clipes = [c for c in historico if c["clipe_utc"] >= desde_janela]
@@ -740,7 +740,7 @@ def exportar(banco="fluxo.db", saida=SAIDA, enviar=None):
         ocorrencias_hist,
     )
     arquivo_csv = saida.with_name("dados-por-hora.csv")
-    db = sqlite3.connect(banco)
+    db = sqlite3.connect(banco, timeout=30)
     arquivo_csv.write_text(csv_por_hora(db), encoding="utf-8")
     nomes = {cam["id"]: cam["nome"] for cam in REGIAO}
     todos = ler(db, "0000")  # ponytail: lê toda a história a cada 5 min; agregar em tabela se pesar

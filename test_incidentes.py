@@ -55,6 +55,26 @@ def _classificador(chamadas, tipo="enguico"):
     return f
 
 
+def test_nao_segura_a_trava_de_escrita_durante_a_chamada_lenta_ao_modelo(tmp_path):
+    """O modelo de visão leva até ~2 min: nesse tempo o banco tem de aceitar outra escrita."""
+    import sqlite3
+
+    arquivo = tmp_path / "t.db"
+    db = sqlite3.connect(arquivo)
+    outro = sqlite3.connect(arquivo, timeout=0.2)
+    durante = []
+
+    def lento(jpgs, p):
+        durante.append(db.in_transaction)
+        outro.execute("CREATE TABLE IF NOT EXISTS outra (x)")  # falharia com a trava presa
+        outro.commit()
+        return {"tipo": "enguico", "confianca": "media", "descricao": "x"}
+
+    registrar(db, "000018", "2026-11-18T10:00:00+00:00", [P], {}, lento)
+    (novo,) = registrar(db, "000018", "2026-11-18T10:01:00+00:00", [P], {}, lento)
+    assert novo["tipo"] == "enguico" and durante == [False]
+
+
 def test_incidente_so_abre_no_segundo_clipe_e_depois_estende():
     db, chamadas = _db(), []
     cls = _classificador(chamadas)

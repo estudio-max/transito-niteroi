@@ -293,7 +293,8 @@ def rastrear(video, modelo, passo=1, ao_quadro=None, **detector):
 
 
 def abrir_banco(caminho):
-    db = sqlite3.connect(caminho)
+    # 30 s de paciência: outro programa (ou a publicação) pode estar gravando
+    db = sqlite3.connect(caminho, timeout=30)
     db.execute(
         "CREATE TABLE IF NOT EXISTS clipes (camera TEXT, clipe_utc TEXT, duracao_s REAL,"
         " ocupacao REAL, "
