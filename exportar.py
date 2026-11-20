@@ -493,6 +493,8 @@ def texto_simples(dados):
     return (
         '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        # base _top: dentro de um iframe em outro site, o link abre o painel na janela inteira
+        '<base target="_top">'
         "<title>Saída da Ponte, só texto</title>"
         '<meta name="robots" content="noindex"></head>'
         '<body style="font-family:sans-serif;max-width:40rem;margin:1rem auto;padding:0 1rem;'

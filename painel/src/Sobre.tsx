@@ -8,6 +8,7 @@ import {Selector} from '@astryxdesign/core/Selector';
 import {VStack} from '@astryxdesign/core/Stack';
 import {Layout, LayoutContent, LayoutPanel} from '@astryxdesign/core/Layout';
 import {Divider} from '@astryxdesign/core/Divider';
+import {CodeBlock} from '@astryxdesign/core/CodeBlock';
 import {Outline, type OutlineItem} from '@astryxdesign/core/Outline';
 import {useMediaQuery} from '@astryxdesign/core/hooks';
 import {
@@ -31,8 +32,14 @@ const OUTLINE_ITEMS: OutlineItem[] = [
   {id: 'guia', label: 'Guia dos gráficos', level: 2},
   {id: 'metodo', label: 'Método e validação', level: 2},
   {id: 'limites', label: 'Limites e privacidade', level: 2},
+  {id: 'incorporar', label: 'Usar em outro site', level: 2},
   {id: 'perguntas', label: 'Perguntas frequentes', level: 2},
 ];
+
+const IFRAME = `<iframe
+  src="https://transito.fanara.com.br/texto.html"
+  title="Trânsito na saída da Ponte Rio–Niterói"
+  width="100%" height="420" loading="lazy"></iframe>`;
 
 const OUTLINE_OPTIONS = OUTLINE_ITEMS.map(item => ({
   value: item.id,
@@ -372,6 +379,26 @@ export default function Sobre() {
                 <ListItem label={<Text type="body">A câmera vê só uma seção da via. Sabemos quantos veículos passam, não de onde vêm nem para onde vão.</Text>} />
                 <ListItem label={<Text type="body">Ajustes de semáforo e de geometria reduzem atraso em gargalos pontuais, mas não resolvem excesso de veículos.</Text>} />
               </List>
+            </VStack>
+
+            <Divider />
+
+            <VStack gap={4}>
+              <Heading id="incorporar" level={2}>
+                Usar em outro site
+              </Heading>
+              <Text type="body">
+                A versão só texto cabe numa moldura (iframe) de qualquer site: não usa
+                JavaScript, atualiza a cada coleta e o link “Painel completo” abre o painel
+                na janela inteira. Cole o código onde quiser mostrar o trânsito:
+              </Text>
+              <CodeBlock code={IFRAME} language="html" />
+              <Text type="body" color="secondary">
+                É uma indicação feita por inteligência artificial, ainda sem conferência por
+                amostragem: mantenha o aviso e o link da moldura. Para dados em planilha, há o{' '}
+                <Link href="dados-por-hora.csv">CSV por hora</Link> e o{' '}
+                <Link href="feed.xml">feed RSS</Link>.
+              </Text>
             </VStack>
 
             <Divider />

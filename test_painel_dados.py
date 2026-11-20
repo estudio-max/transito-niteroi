@@ -417,3 +417,4 @@ def test_texto_simples_tem_o_essencial_e_escapa_html():
     assert "Jansen x Mal. Deodoro: acima do habitual. Movimento: 900 veículos/h" in html
     assert "veículo enguiçado em Jansen x Mal. Deodoro desde 18h00" in html
     assert "Atualizado em 19/11 às 18h00" in html and "<script" not in html
+    assert '<base target="_top">' in html  # o link do painel sai do iframe

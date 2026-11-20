@@ -851,6 +851,24 @@ const emAndamento = (o: Ocorrencia, dados: Dados) =>
   new Date(dados.ultimo_clipe_utc).getTime() - new Date(o.fim_utc).getTime() <
     AO_VIVO_MIN * 60_000;
 
+const REPOSITORIO = 'https://github.com/estudio-max/transito-niteroi';
+
+// Abre uma issue pública já preenchida com a ocorrência (só dados que o painel já mostra):
+// o site é estático e não tem como receber a correção, o GitHub recebe.
+function urlAvisoErro(o: Ocorrencia) {
+  const rotulo = TIPO_OCORRENCIA[o.tipo].rotulo;
+  const quando = diaHora.format(new Date(o.inicio_utc));
+  const titulo = `Ocorrência errada? ${rotulo} em ${o.camera}, ${quando}`;
+  const corpo = [
+    `Ocorrência no painel: ${rotulo} em ${o.camera}, desde ${quando}.`,
+    `Confiança do modelo: ${CONFIANCA[o.confianca]}. Descrição automática: ${o.descricao}`,
+    '',
+    'O que realmente aconteceu? (acidente, enguiço, bloqueio, estacionado, nada de anormal, não sei)',
+    '',
+  ].join('\n');
+  return `${REPOSITORIO}/issues/new?title=${encodeURIComponent(titulo)}&body=${encodeURIComponent(corpo)}`;
+}
+
 function Ocorrencias({
   lista,
   noMapa,
@@ -879,16 +897,19 @@ function Ocorrencias({
                 </Text>
               </HStack>
               <Text type="body">{o.descricao}</Text>
-              {noMapa[o.camera] && (
-                <HStack>
+              <HStack gap={3} vAlign="center" wrap="wrap">
+                {noMapa[o.camera] && (
                   <Button
                     label="Ver no mapa"
                     variant="ghost"
                     size="sm"
                     onClick={() => aoVerNoMapa(noMapa[o.camera])}
                   />
-                </HStack>
-              )}
+                )}
+                <Link href={urlAvisoErro(o)} isExternalLink>
+                  Avisar erro na classificação
+                </Link>
+              </HStack>
             </VStack>
           ))}
         </VStack>
