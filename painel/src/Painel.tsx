@@ -33,6 +33,9 @@ import type {TableColumn} from '@astryxdesign/core/Table';
 import {Divider} from '@astryxdesign/core/Divider';
 import {Icon} from '@astryxdesign/core/Icon';
 import {StopIcon} from '@heroicons/react/24/solid';
+import {InformationCircleIcon} from '@heroicons/react/24/outline';
+import {Popover} from '@astryxdesign/core/Popover';
+import {IconButton} from '@astryxdesign/core/IconButton';
 import {Link} from '@astryxdesign/core/Link';
 import {Button} from '@astryxdesign/core/Button';
 import {Topo} from './Topo';
@@ -546,6 +549,27 @@ function SerieChart({
   const estreito = window.matchMedia('(max-width: 640px)').matches;
   const ultimoIndice = (chave: string) =>
     estreito ? -1 : dados.serie.reduce((ult, p, i) => (p[chave] != null ? i : ult), -1);
+  // Cada linha escreve o nome no próprio último ponto, sem saber das outras: estimo a altura
+  // de cada rótulo pela escala do eixo e empurro para baixo quem ficaria colado no anterior.
+  const maximo = Math.max(
+    1,
+    ...dados.serie.flatMap(p => cams.map(({c}) => (p[chaveDe(c.id)] as number | null) ?? 0)),
+  );
+  const ALTURA_UTIL = 230; // 280 do gráfico menos margens e eixo de baixo
+  const deslocamento: Record<string, number> = {};
+  let anterior = -Infinity;
+  for (const {id, y} of cams
+    .map(({c}) => {
+      const k = chaveDe(c.id);
+      const i = ultimoIndice(k);
+      const v = i >= 0 ? ((dados.serie[i][k] as number | null) ?? 0) : 0;
+      return {id: c.id, y: ALTURA_UTIL * (1 - v / maximo)};
+    })
+    .sort((a, b) => a.y - b.y)) {
+    const novo = Math.max(y, anterior + 16);
+    deslocamento[id] = novo - y;
+    anterior = novo;
+  }
   return (
     <VStack gap={3}>
       <ResponsiveContainer width="100%" height={280}>
@@ -591,7 +615,7 @@ function SerieChart({
                 stroke={cor(c.id)}
                 strokeWidth={2}
                 strokeDasharray={TRACO_CAMERA[c.id]}
-                dot={{r: 2.5, strokeWidth: 0, fill: cor(c.id)}}
+                dot={false}
                 activeDot={{r: 5}}
                 connectNulls={false}
                 animationDuration={600}
@@ -599,7 +623,7 @@ function SerieChart({
                   p.index === ultimo ? (
                     <text
                       x={Number(p.x ?? 0) + 8}
-                      y={Number(p.y ?? 0) + 4}
+                      y={Number(p.y ?? 0) + 4 + (deslocamento[c.id] ?? 0)}
                       fontSize="var(--font-size-sm, 12px)"
                       fill={TINTA}>
                       {c.nome}
@@ -640,6 +664,88 @@ function Sparkline({valores, cor, id}: {valores: number[]; cor: string; id: stri
       </AreaChart>
     </ResponsiveContainer>
   );
+}
+
+// ---------- leituras em palavras (botão "i" de cada gráfico) ----------
+
+type Sentido = (typeof SENTIDOS)[number];
+
+function leituraSerie(
+  dados: Dados,
+  sentido: Sentido | undefined,
+  unidade: string,
+  formato: Intl.NumberFormat,
+): Leitura {
+  const cams = dados.cameras.filter(c => !sentido || visivel(dados, c.id, sentido));
+  const agora = cams.flatMap(c => {
+    const k = sentido ? `${c.id}_${sentido}_fluxo` : `${c.id}_ocup`;
+    const pts = dados.serie.filter(p => p[k] != null);
+    if (pts.length < 3) {
+      return [];
+    }
+    const v = (p: Ponto) => p[k] as number;
+    const pico = pts.reduce((a, b) => (v(b) > v(a) ? b : a));
+    const vale = pts.reduce((a, b) => (v(b) < v(a) ? b : a));
+    const ult = pts[pts.length - 1];
+    return [
+      `${c.nome}: o mais alto foi ${formato.format(v(pico))} ${unidade}, em ${diaHora.format(pico.t)}; o mais baixo, ${formato.format(v(vale))}, em ${diaHora.format(vale.t)}. No último registro, às ${hora.format(ult.t)}, estava em ${formato.format(v(ult))}.`,
+    ];
+  });
+  const comoLer = sentido
+    ? `Cada linha é uma câmera, na cor da legenda. A altura da linha é quantos veículos por hora passaram pela linha de contagem, em médias de ${dados.balde_min} minutos; o eixo de baixo é a hora do dia. Linha subindo quer dizer mais veículos passando. Um buraco na linha é tempo sem coleta, e um degrau brusco pode ser troca do detector ou da linha de contagem, não do trânsito.`
+    : 'Cada linha é uma câmera. A altura é quantos veículos aparecem, em média, em cada quadro do vídeo: sobe quando a via enche, com veículos parados ou andando devagar. Se a ocupação sobe e o fluxo cai na mesma hora, é sinal de fila.';
+  return {comoLer, agora};
+}
+
+function leituraDispersao(dados: Dados): Leitura {
+  const agora = dados.cameras.flatMap(c => {
+    const pts = dados.dispersao.filter(p => p.c === c.id && p.f != null);
+    if (pts.length < 20) {
+      return [];
+    }
+    const ord = (xs: number[]) => [...xs].sort((a, b) => a - b);
+    const oCheia = ord(pts.map(p => p.o))[Math.floor(pts.length * 0.8)];
+    const fMediana = ord(pts.map(p => p.f as number))[Math.floor(pts.length / 2)];
+    const fila = pts.filter(p => p.o >= oCheia && (p.f as number) <= fMediana).length;
+    const pct = Math.round((100 * fila) / pts.length);
+    return [
+      pct < 3
+        ? `${c.nome}: quase nunca houve sinal de fila. Quando a imagem enche, passa mais gente, não menos.`
+        : `${c.nome}: em ${pct}% dos minutos a imagem estava cheia e passava pouca gente, sinal de fila.`,
+    ];
+  });
+  return {
+    comoLer:
+      'Cada ponto é um clipe de cerca de 1 minuto de uma câmera. Quanto mais à direita, mais veículos na imagem (ocupação); quanto mais alto, mais veículos passando pela linha (fluxo). Pontos que sobem juntos para a direita mostram trânsito fluindo. Pontos à direita e embaixo, com a imagem cheia e pouca gente passando, mostram fila.',
+    agora,
+  };
+}
+
+function leituraTipos(resumo: Resumo): Leitura {
+  const total = TIPOS.reduce((s, [k]) => s + (resumo.tipos[k] ?? 0), 0);
+  const pct = (k: string) => Math.round((100 * (resumo.tipos[k] ?? 0)) / Math.max(total, 1));
+  return {
+    comoLer:
+      'Cada barra é um tipo de veículo. O comprimento é quantos foram contados nas últimas 24 horas, e o número ao lado dá a quantidade e a parte do total da câmera.',
+    agora: total
+      ? [
+          `${resumo.nome}: de cada 100 veículos, ${pct('carro')} são carros, ${pct('moto')} motos, ${pct('onibus')} ônibus e ${pct('caminhao')} caminhões (${numero.format(total)} veículos ao todo). Vans, SUVs e picapes entram como carro.`,
+        ]
+      : [],
+  };
+}
+
+function leituraCobertura(cobertura: NonNullable<Dados['cobertura']>): Leitura {
+  const {dias, minutos} = cobertura;
+  const diasComDado = minutos.filter(l => l.some(m => m > 0)).length;
+  const horasBoas = minutos.flat().filter(m => m >= 30).length;
+  return {
+    comoLer:
+      'Cada linha é um dia e cada coluna, uma hora. Quanto mais escuro o quadrado, mais minutos de vídeo foram analisados naquela hora; quadrado vazio é hora sem coleta (computador desligado ou câmera fora do ar).',
+    agora: [
+      `Nos últimos ${dias.length} dias, ${diasComDado} tiveram coleta e ${horasBoas} horas somaram pelo menos 30 minutos de vídeo analisado.`,
+    ],
+  };
 }
 
 function DispersaoChart({dados}: {dados: Dados}) {
@@ -905,22 +1011,75 @@ function MetricCard({
   );
 }
 
+// Leitura de um gráfico em palavras: como ler e o que ele mostra agora (frases calculadas
+// dos próprios dados). Para quem não lê gráfico, e para leitor de tela.
+interface Leitura {
+  comoLer: string;
+  agora: string[];
+}
+
+function LeituraEmPalavras({leitura}: {leitura: Leitura}) {
+  return (
+    <VStack gap={3}>
+      <VStack gap={1}>
+        <Text type="body" weight="semibold">
+          Como ler
+        </Text>
+        <Text type="body">{leitura.comoLer}</Text>
+      </VStack>
+      {leitura.agora.length > 0 && (
+        <VStack gap={1}>
+          <Text type="body" weight="semibold">
+            O que ele mostra
+          </Text>
+          {leitura.agora.map(f => (
+            <Text key={f} type="body">
+              {f}
+            </Text>
+          ))}
+        </VStack>
+      )}
+    </VStack>
+  );
+}
+
 function ChartCard({
   titulo,
   apoio,
   children,
+  leitura,
 }: {
   titulo: string;
   apoio: string;
   children: ReactNode;
+  leitura?: Leitura;
 }) {
   return (
     <Card>
       <VStack gap={4}>
         <VStack gap={1}>
-          <Heading level={4} accessibilityLevel={3}>
-            {titulo}
-          </Heading>
+          <HStack gap={2} vAlign="center" hAlign="between">
+            <Heading level={4} accessibilityLevel={3}>
+              {titulo}
+            </Heading>
+            {leitura && (
+              <Popover
+                content={<LeituraEmPalavras leitura={leitura} />}
+                label={`${titulo}: o gráfico em palavras`}
+                closeButtonLabel="Fechar explicação"
+                placement="below"
+                alignment="end"
+                width={380}>
+                <IconButton
+                  label={`Explicar o gráfico "${titulo}" em palavras`}
+                  tooltip="O gráfico em palavras"
+                  icon={<Icon icon={InformationCircleIcon} />}
+                  variant="ghost"
+                  size="sm"
+                />
+              </Popover>
+            )}
+          </HStack>
           <Text type="body" color="secondary">
             {apoio}
           </Text>
@@ -1896,6 +2055,7 @@ function Resumo24h({dados}: {dados: Dados}) {
           <ChartCard
             key={s}
             titulo={`Fluxo · ${rotuloMin(dados, s)}`}
+            leitura={leituraSerie(dados, s, 'veículos/h', numero)}
             apoio={`Veículos por hora que cruzam a linha de contagem, em médias de ${dados.balde_min} minutos. ${notaSentido(dados, s)}`}>
             <SerieChart
               dados={dados}
@@ -1908,6 +2068,7 @@ function Resumo24h({dados}: {dados: Dados}) {
         ))}
         <ChartCard
           titulo="Ocupação"
+          leitura={leituraSerie(dados, undefined, 'veículos por quadro', decimal)}
           apoio="Média de veículos visíveis por quadro. Sobe quando há fila, mesmo que o fluxo caia.">
           <SerieChart
             dados={dados}
@@ -1925,6 +2086,7 @@ function Resumo24h({dados}: {dados: Dados}) {
             <ChartCard
               key={r.id}
               titulo={`Tipos de veículo · ${r.nome}`}
+              leitura={leituraTipos(r)}
               apoio={`${numero.format(total)} veículos nas últimas 24 h.`}>
               <TiposChart resumo={r} cor={cor(r.id)} />
             </ChartCard>
@@ -1991,6 +2153,7 @@ function Conteudo({dados}: {dados: Dados}) {
       {/* Cobertura */}
       <ChartCard
         titulo="Cobertura da coleta"
+        leitura={dados.cobertura ? leituraCobertura(dados.cobertura) : undefined}
         apoio="Quais horas dos últimos 14 dias têm dado. Desde 19/11/2026 a coleta roda o dia todo; antes, só nos picos. Buracos são horas em que o computador que mede ficou parado.">
         {dados.cobertura ? (
           <CoberturaMapa cobertura={dados.cobertura} />
@@ -2012,6 +2175,7 @@ function Conteudo({dados}: {dados: Dados}) {
           <ChartCard
             key={s}
             titulo={`Fluxo · ${rotuloMin(dados, s)}`}
+            leitura={leituraSerie(dados, s, 'veículos/h', numero)}
             apoio={`Veículos por hora que cruzam a linha de contagem, em médias de ${dados.balde_min} minutos. Horário de Brasília. ${notaSentido(dados, s)}`}>
             <SerieChart
               dados={dados}
@@ -2024,6 +2188,7 @@ function Conteudo({dados}: {dados: Dados}) {
         ))}
         <ChartCard
           titulo="Ocupação"
+          leitura={leituraSerie(dados, undefined, 'veículos por quadro', decimal)}
           apoio="Média de veículos visíveis por quadro. Sobe quando há fila, mesmo que o fluxo caia.">
           <SerieChart
             dados={dados}
@@ -2043,6 +2208,7 @@ function Conteudo({dados}: {dados: Dados}) {
       <Grid columns={{minWidth: 420, repeat: 'fit'}} gap={4}>
         <ChartCard
           titulo="Fluxo × ocupação"
+          leitura={leituraDispersao(dados)}
           apoio="Cada ponto é um clipe. Com trânsito livre, os dois sobem juntos; quando há fila, a ocupação sobe e o fluxo cai.">
           <DispersaoChart dados={dados} />
         </ChartCard>
@@ -2051,6 +2217,7 @@ function Conteudo({dados}: {dados: Dados}) {
             <ChartCard
               key={r.id}
               titulo={`Tipos de veículo · ${r.nome}`}
+              leitura={leituraTipos(r)}
               apoio="Veículos contados por tipo e participação no total da câmera.">
               <TiposChart resumo={r} cor={cor(r.id)} />
             </ChartCard>
