@@ -6,9 +6,9 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   build: {
-    // duas páginas: o painel (/) e a apresentação do projeto (/sobre/)
+    // três páginas: o painel (/), os sinistros (/sinistros/) e a apresentação (/sobre/)
     rolldownOptions: {
-      input: { main: 'index.html', sobre: 'sobre/index.html' },
+      input: { main: 'index.html', sobre: 'sobre/index.html', sinistros: 'sinistros/index.html' },
     },
   },
 })

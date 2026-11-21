@@ -4,10 +4,11 @@ import {Text} from '@astryxdesign/core/Text';
 
 const PAGINAS = [
   {id: 'painel', href: '/', nome: 'Painel'},
+  {id: 'sinistros', href: '/sinistros/', nome: 'Sinistros'},
   {id: 'sobre', href: '/sobre/', nome: 'Sobre o projeto'},
 ] as const;
 
-// Navegação entre as duas páginas; a atual aparece como texto, não como link.
+// Navegação entre as páginas; a atual aparece como texto, não como link.
 export function Topo({atual}: {atual: (typeof PAGINAS)[number]['id']}) {
   return (
     <nav aria-label="Páginas do site">

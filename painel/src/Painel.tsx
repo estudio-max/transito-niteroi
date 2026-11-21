@@ -7,7 +7,6 @@ import {Banner} from '@astryxdesign/core/Banner';
 import {Badge} from '@astryxdesign/core/Badge';
 import {Collapsible} from '@astryxdesign/core/Collapsible';
 import {SegmentedControl, SegmentedControlItem} from '@astryxdesign/core/SegmentedControl';
-import {Selector} from '@astryxdesign/core/Selector';
 import {EmptyState} from '@astryxdesign/core/EmptyState';
 import {Spinner} from '@astryxdesign/core/Spinner';
 import {StatusDot} from '@astryxdesign/core/StatusDot';
@@ -33,12 +32,13 @@ import type {TableColumn} from '@astryxdesign/core/Table';
 import {Divider} from '@astryxdesign/core/Divider';
 import {Icon} from '@astryxdesign/core/Icon';
 import {StopIcon} from '@heroicons/react/24/solid';
-import {InformationCircleIcon} from '@heroicons/react/24/outline';
-import {Popover} from '@astryxdesign/core/Popover';
-import {IconButton} from '@astryxdesign/core/IconButton';
 import {Link} from '@astryxdesign/core/Link';
 import {Button} from '@astryxdesign/core/Button';
 import {Topo} from './Topo';
+import {ChartCard} from './ChartCard';
+import type {Leitura} from './ChartCard';
+import {SEM_FILTRO, descricaoFiltro, trechosFiltrados, useSinistros, vitimasTexto} from './sinistros';
+import type {Sinistros} from './sinistros';
 import type {FocoMapa} from './Mapa';
 import {Contador, Radar, Veiculo} from './Vivo';
 import {useMovimentoReduzido} from './useVivo';
@@ -156,137 +156,6 @@ interface Tendencia {
 }
 const DIRECAO = {subindo: 'subindo', estavel: 'estável', descendo: 'descendo'} as const;
 const ROTULO_MOVIMENTO = {leste: 'leste', oeste: 'oeste', norte: 'norte', sul: 'sul'} as const;
-
-// Pontos críticos de sinistros (sinistros.py): PRF nas rodovias federais e o ranking
-// de vias da NitTrans, transcrito da tabela publicada em imagem.
-interface Sinistros {
-  prf: {
-    fonte: string;
-    anos: number[];
-    total_sinistros: number;
-    total_mortos: number;
-    total_feridos_graves: number;
-    fora_do_mapa: number;
-    trechos: Array<{
-      nome: string;
-      sinistros: number;
-      mortos: number;
-      feridos_graves: number;
-      graves: number;
-      grupos?: Record<string, GrupoSinistro>; // por categoria (sinistros.categoria)
-      lat: number | null;
-      lon: number | null;
-    }>;
-  };
-  nittrans: {
-    fonte: string;
-    url: string;
-    vias: Array<{via: string; '2024': number; '2025': number; '2026': number; total: number}>;
-  };
-}
-
-interface GrupoSinistro {
-  n: number;
-  vitimas: number; // sinistros com ferido ou morto
-  fatais: number; // sinistros com morto
-  mortos: number;
-  feridos_graves: number;
-}
-
-// Filtro dos sinistros da PRF (mapa e ranking). A tabela da NitTrans não tem tipo nem gravidade.
-type Gravidade = 'todos' | 'vitimas' | 'fatais';
-interface FiltroSinistros {
-  gravidade: Gravidade;
-  tipo: string; // 'todos' ou uma chave de CATEGORIAS
-}
-// Rótulos curtos: os três cabem no celular sem cortar ("Vítimas" = feridos ou mortos).
-const GRAVIDADES: Array<[Gravidade, string]> = [
-  ['todos', 'Todos'],
-  ['vitimas', 'Vítimas'],
-  ['fatais', 'Mortes'],
-];
-const CATEGORIAS: Array<[string, string]> = [
-  ['colisao', 'Colisões'],
-  ['queda', 'Quedas de moto e de ocupantes'],
-  ['atropelamento', 'Atropelamentos'],
-  ['tombamento', 'Tombamentos e saídas de pista'],
-  ['outros', 'Outros (incêndio, carga, etc.)'],
-];
-const ROTULO_GRAVIDADE: Record<Gravidade, [string, string]> = {
-  todos: ['sinistro', 'sinistros'],
-  vitimas: ['sinistro com vítimas', 'sinistros com vítimas'],
-  fatais: ['sinistro com morte', 'sinistros com mortes'],
-};
-
-// Trechos da PRF com o que o filtro escolhe: quantos sinistros, mortos e feridos graves.
-// Sem `grupos` (sinistros.json antigo), só o filtro "todos/todos" tem dado.
-function trechosFiltrados(s: Sinistros, f: FiltroSinistros) {
-  return s.prf.trechos
-    .map(t => {
-      const grupos = Object.entries(t.grupos ?? {}).filter(([k]) => f.tipo === 'todos' || k === f.tipo);
-      const soma = (campo: keyof GrupoSinistro) => grupos.reduce((a, [, g]) => a + g[campo], 0);
-      const valor = f.gravidade === 'todos' ? soma('n') : soma(f.gravidade);
-      // Os feridos graves por categoria incluem sinistros sem morte: no filtro "com mortes"
-      // ficam de fora, para não parecerem vítimas dos sinistros fatais.
-      const feridos_graves: number | null = f.gravidade === 'fatais' ? null : soma('feridos_graves');
-      return t.grupos
-        ? {...t, valor, mortos: soma('mortos'), feridos_graves}
-        : {...t, valor: f.gravidade === 'todos' && f.tipo === 'todos' ? t.sinistros : 0};
-    })
-    .filter(t => t.valor > 0)
-    .sort(
-      (a, b) =>
-        b.mortos + (b.feridos_graves ?? 0) - (a.mortos + (a.feridos_graves ?? 0)) || b.valor - a.valor,
-    );
-}
-
-const vitimasTexto = (t: {mortos: number; feridos_graves: number | null}) =>
-  `${t.mortos} ${t.mortos === 1 ? 'morto' : 'mortos'}${t.feridos_graves == null ? '' : ` e ${t.feridos_graves} feridos graves`}`;
-
-const descricaoFiltro = (f: FiltroSinistros, n = 2) =>
-  `${ROTULO_GRAVIDADE[f.gravidade][n === 1 ? 0 : 1]}${f.tipo === 'todos' ? '' : ` · ${CATEGORIAS.find(([k]) => k === f.tipo)?.[1].toLowerCase()}`}`;
-
-function FiltroDeSinistros({filtro, aoMudar}: {filtro: FiltroSinistros; aoMudar: (f: FiltroSinistros) => void}) {
-  return (
-    <Grid columns={{minWidth: 260, repeat: 'fit'}} gap={3}>
-      <SegmentedControl
-        value={filtro.gravidade}
-        onChange={v => aoMudar({...filtro, gravidade: v as Gravidade})}
-        label="Gravidade dos sinistros"
-        layout="fill">
-        {GRAVIDADES.map(([v, nome]) => (
-          <SegmentedControlItem key={v} value={v} label={nome} />
-        ))}
-      </SegmentedControl>
-      <Selector
-        label="Tipo de sinistro"
-        value={filtro.tipo}
-        onChange={v => aoMudar({...filtro, tipo: v ?? 'todos'})}
-        options={[{value: 'todos', label: 'Todos os tipos'}, ...CATEGORIAS.map(([value, label]) => ({value, label}))]}
-      />
-    </Grid>
-  );
-}
-
-function useSinistros() {
-  const [s, setS] = useState<Sinistros | null>(null);
-  useEffect(() => {
-    fetch('sinistros.json')
-      .then(r => (r.ok ? r.json() : null))
-      .then(setS)
-      .catch(() => setS(null));
-  }, []);
-  return s;
-}
-
-// Vias da tabela da NitTrans que têm câmera pública da região (coletor.REGIAO), separando
-// as que este projeto conta das que só têm câmera.
-const VIAS_COM_CAMERA: Record<string, {cameras: number; contando: boolean}> = {
-  'Alameda São Boaventura': {cameras: 2, contando: false},
-  'Av. Professor João Brasil': {cameras: 1, contando: false},
-  'Av. Feliciano Sodré': {cameras: 2, contando: false},
-  'Av. Jansen de Melo': {cameras: 2, contando: true},
-};
 
 // Um período contínuo de coleta (exportar.periodos), mais recente primeiro.
 interface Periodo {
@@ -666,9 +535,118 @@ function Sparkline({valores, cor, id}: {valores: number[]; cor: string; id: stri
   );
 }
 
-// ---------- leituras em palavras (botão "i" de cada gráfico) ----------
+// ---------- leituras em palavras ("Entenda este gráfico") ----------
+// Interpretam o fenômeno, em tom de reportagem, a partir dos próprios dados: o desenho do
+// dia, onde está o trânsito agora, se as câmeras concordam, se há fila. Números só onde
+// ajudam. Se faltar dado, o texto encurta em vez de inventar.
 
 type Sentido = (typeof SENTIDOS)[number];
+type Trecho = {t: number; v: number};
+
+const media = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1);
+// "08:25" → "8h25"; "08:00" → "8h"
+const hh = (t: number) => {
+  const [h, m] = hora.format(t).split(':');
+  return `${Number(h)}h${m === '00' ? '' : m}`;
+};
+const lista = (nomes: string[]) =>
+  nomes.length < 2 ? nomes.join('') : `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}`;
+
+function serieDe(dados: Dados, chave: (p: Ponto) => number | null): Trecho[] {
+  return dados.serie.flatMap(p => {
+    const v = chave(p);
+    return v == null ? [] : [{t: p.t, v}];
+  });
+}
+
+function correlacao(a: Map<number, number>, b: Map<number, number>) {
+  const ts = [...a.keys()].filter(t => b.has(t));
+  if (ts.length < 24) {
+    return null;
+  }
+  const xa = ts.map(t => a.get(t)!);
+  const xb = ts.map(t => b.get(t)!);
+  const ma = media(xa);
+  const mb = media(xb);
+  let num = 0;
+  let da = 0;
+  let db = 0;
+  ts.forEach((_, i) => {
+    num += (xa[i] - ma) * (xb[i] - mb);
+    da += (xa[i] - ma) ** 2;
+    db += (xb[i] - mb) ** 2;
+  });
+  return da && db ? num / Math.sqrt(da * db) : null;
+}
+
+interface Analise {
+  nome: string;
+  pts: Trecho[];
+  pico: Trecho;
+  vale: Trecho;
+  agora: number; // média dos últimos 15 min
+  ultimo: Trecho;
+  tendencia: 'subindo' | 'caindo' | 'estável' | null;
+  subida: Trecho | null; // primeira vez, depois do vale, acima de 60% do pico
+  horas: number; // horas de registro
+}
+
+function analisar(nome: string, pts: Trecho[]): Analise | null {
+  if (pts.length < 6) {
+    return null;
+  }
+  const pico = pts.reduce((a, b) => (b.v > a.v ? b : a));
+  const vale = pts.reduce((a, b) => (b.v < a.v ? b : a));
+  const ultimo = pts[pts.length - 1];
+  const agora = media(pts.slice(-3).map(p => p.v));
+  const antes = pts.filter(p => p.t >= ultimo.t - 60 * 60_000 && p.t < ultimo.t - 15 * 60_000);
+  const ref = antes.length >= 3 ? media(antes.map(p => p.v)) : null;
+  const tendencia =
+    ref == null || ref === 0
+      ? null
+      : agora > ref * 1.15
+        ? 'subindo'
+        : agora < ref * 0.85
+          ? 'caindo'
+          : 'estável';
+  const subida = pts.find(p => p.t > vale.t && p.v >= 0.6 * pico.v) ?? null;
+  return {nome, pts, pico, vale, agora, ultimo, tendencia, subida, horas: (ultimo.t - pts[0].t) / 3_600_000};
+}
+
+const fimDeSemana = (t: number) =>
+  ['sáb.', 'dom.'].includes(new Intl.DateTimeFormat('pt-BR', {timeZone: FUSO, weekday: 'short'}).format(t));
+
+// Fluxo arredonda para veículos inteiros; ocupação mantém uma casa (o formato já limita).
+const valor = (v: number, formato: Intl.NumberFormat) =>
+  formato.format(formato.resolvedOptions().maximumFractionDigits === 1 ? v : Math.round(v));
+
+function frasePatamar(a: Analise, unidade: string, formato: Intl.NumberFormat, ocupacao = false) {
+  const r = a.agora / Math.max(a.pico.v, 1e-9);
+  const tend =
+    a.tendencia === 'subindo'
+      ? ', e voltou a subir na última hora'
+      : a.tendencia === 'caindo'
+        ? ', e vem caindo na última hora'
+        : a.tendencia === 'estável'
+          ? ', estável na última hora'
+          : '';
+  const patamar = ocupacao
+    ? r >= 0.85
+      ? 'a via está tão cheia quanto no auge'
+      : r >= 0.6
+        ? `a via segue cheia, em torno de ${Math.round(r * 100)}% do máximo`
+        : r >= 0.3
+          ? `a via está com movimento médio, cerca de ${Math.round(r * 100)}% do máximo`
+          : 'a via está vazia perto do que já esteve'
+    : r >= 0.85
+      ? 'o movimento continua no patamar do pico'
+      : r >= 0.6
+        ? `o movimento segue forte, em torno de ${Math.round(r * 100)}% do pico`
+        : r >= 0.3
+          ? `o movimento é moderado, cerca de ${Math.round(r * 100)}% do pico`
+          : 'o trânsito está tranquilo, bem abaixo do pico';
+  return `Às ${hh(a.ultimo.t)}, no último registro, ${patamar} (${valor(a.agora, formato)} ${unidade} na ${a.nome})${tend}.`;
+}
 
 function leituraSerie(
   dados: Dados,
@@ -677,28 +655,86 @@ function leituraSerie(
   formato: Intl.NumberFormat,
 ): Leitura {
   const cams = dados.cameras.filter(c => !sentido || visivel(dados, c.id, sentido));
-  const agora = cams.flatMap(c => {
-    const k = sentido ? `${c.id}_${sentido}_fluxo` : `${c.id}_ocup`;
-    const pts = dados.serie.filter(p => p[k] != null);
-    if (pts.length < 3) {
-      return [];
-    }
-    const v = (p: Ponto) => p[k] as number;
-    const pico = pts.reduce((a, b) => (v(b) > v(a) ? b : a));
-    const vale = pts.reduce((a, b) => (v(b) < v(a) ? b : a));
-    const ult = pts[pts.length - 1];
-    return [
-      `${c.nome}: o mais alto foi ${formato.format(v(pico))} ${unidade}, em ${diaHora.format(pico.t)}; o mais baixo, ${formato.format(v(vale))}, em ${diaHora.format(vale.t)}. No último registro, às ${hora.format(ult.t)}, estava em ${formato.format(v(ult))}.`,
-    ];
+  const chave = (id: string) => (sentido ? `${id}_${sentido}_fluxo` : `${id}_ocup`);
+  const analises = cams.flatMap(c => {
+    const a = analisar(c.nome, serieDe(dados, p => p[chave(c.id)] as number | null));
+    return a ? [{c, a}] : [];
   });
   const comoLer = sentido
-    ? `Cada linha é uma câmera, na cor da legenda. A altura da linha é quantos veículos por hora passaram pela linha de contagem, em médias de ${dados.balde_min} minutos; o eixo de baixo é a hora do dia. Linha subindo quer dizer mais veículos passando. Um buraco na linha é tempo sem coleta, e um degrau brusco pode ser troca do detector ou da linha de contagem, não do trânsito.`
-    : 'Cada linha é uma câmera. A altura é quantos veículos aparecem, em média, em cada quadro do vídeo: sobe quando a via enche, com veículos parados ou andando devagar. Se a ocupação sobe e o fluxo cai na mesma hora, é sinal de fila.';
-  return {comoLer, agora};
+    ? `Cada linha é uma câmera; a altura é quantos veículos por hora passaram, em médias de ${dados.balde_min} minutos. Buraco na linha é tempo sem coleta; degrau brusco pode ser troca do detector, não do trânsito.`
+    : 'Cada linha é uma câmera; a altura é quantos veículos aparecem, em média, em cada quadro do vídeo.';
+  if (!analises.length) {
+    return {texto: ['Ainda não há registros suficientes para uma leitura deste gráfico.'], comoLer};
+  }
+  const maduras = analises.filter(({a}) => a.horas >= 8);
+  const novas = analises.filter(({a}) => a.horas < 8);
+  const texto: string[] = [];
+  // a câmera de maior pico, entre as que têm ao menos 8 h de registro, conduz a narrativa
+  const base = (maduras.length ? maduras : analises).reduce((x, y) => (y.a.pico.v > x.a.pico.v ? y : x));
+  const {a} = base;
+  if (sentido) {
+    const onde = `No sentido ${rotuloMin(dados, sentido)}`;
+    const madrugada = Number(hora.format(a.vale.t).slice(0, 2)) <= 5;
+    if (madrugada && a.subida && a.horas >= 12) {
+      texto.push(
+        `${onde}, o dia tem o desenho clássico do trânsito de ${fimDeSemana(a.ultimo.t) ? 'fim de semana' : 'dia útil'}: a via esvazia de madrugada, com o ponto mais calmo às ${hh(a.vale.t)}, e volta a encher depressa a partir das ${hh(a.subida.t)}. O auge veio às ${hh(a.pico.t)}, quando a ${a.nome} chegou a ${valor(a.pico.v, formato)} ${unidade}.`,
+      );
+    } else {
+      texto.push(
+        `${onde}, o momento de maior movimento foi às ${hh(a.pico.t)}, com ${valor(a.pico.v, formato)} ${unidade} na ${a.nome}; o mais calmo, às ${hh(a.vale.t)}.`,
+      );
+    }
+    texto.push(frasePatamar(a, unidade, formato));
+  } else {
+    // ocupação: a via cheia é volume (passa mais gente) ou retenção (passa menos)?
+    const fluxo = analisar(
+      a.nome,
+      serieDe(dados, p => {
+        const d = p[`${base.c.id}_desce_fluxo`] as number | null;
+        const s = p[`${base.c.id}_sobe_fluxo`] as number | null;
+        return d == null && s == null ? null : (d ?? 0) + (s ?? 0);
+      }),
+    );
+    const noPico = fluxo?.pts.find(p => p.t === a.pico.t)?.v;
+    if (fluxo && noPico != null) {
+      const perto = Math.abs(fluxo.pico.t - a.pico.t) <= 45 * 60_000 || noPico >= 0.8 * fluxo.pico.v;
+      texto.push(
+        perto
+          ? `Na ${a.nome}, a via fica mais cheia às ${hh(a.pico.t)}, com ${formato.format(a.pico.v)} ${unidade} em média, justamente quando mais veículos passam. É volume, não fila: a imagem enche porque o trânsito está intenso, mas andando.`
+          : `Na ${a.nome}, a via fica mais cheia às ${hh(a.pico.t)}, mas nesse momento passam ${Math.round(100 - (100 * noPico) / fluxo.pico.v)}% menos veículos do que no pico do fluxo, às ${hh(fluxo.pico.t)}. Imagem cheia com menos gente passando é o retrato de uma retenção.`,
+      );
+    } else {
+      texto.push(
+        `Na ${a.nome}, a via fica mais cheia às ${hh(a.pico.t)}, com ${formato.format(a.pico.v)} ${unidade} em média.`,
+      );
+    }
+    texto.push(frasePatamar(a, unidade, formato, true));
+  }
+  // as câmeras concordam? (mesmos horários, correlação das curvas)
+  if (maduras.length >= 2) {
+    const [x, y] = [...maduras].sort((p, q) => q.a.pico.v - p.a.pico.v);
+    const r = correlacao(new Map(x.a.pts.map(p => [p.t, p.v])), new Map(y.a.pts.map(p => [p.t, p.v])));
+    if (r != null) {
+      texto.push(
+        r >= 0.75
+          ? `A ${x.a.nome} e a ${y.a.nome} sobem e descem no mesmo compasso, sinal de que o desenho é do trânsito da região, e não de uma câmera isolada.`
+          : r >= 0.4
+            ? `A ${x.a.nome} e a ${y.a.nome} seguem o mesmo ritmo geral, com diferenças ao longo do dia.`
+            : `A ${x.a.nome} e a ${y.a.nome} seguem ritmos diferentes; parte da diferença pode vir de troca de enquadramento ou da linha de contagem, e não do trânsito.`,
+      );
+    }
+  }
+  if (novas.length && maduras.length) {
+    const nomes = novas.map(({a: n}) => n.nome);
+    texto.push(
+      `${nomes.length > 1 ? 'As câmeras' : 'A câmera'} ${lista(nomes)} ${nomes.length > 1 ? 'entraram' : 'entrou'} na contagem há poucas horas; ainda é cedo para dizer como é o dia ali.`,
+    );
+  }
+  return {texto, comoLer};
 }
 
 function leituraDispersao(dados: Dados): Leitura {
-  const agora = dados.cameras.flatMap(c => {
+  const resultados = dados.cameras.flatMap(c => {
     const pts = dados.dispersao.filter(p => p.c === c.id && p.f != null);
     if (pts.length < 20) {
       return [];
@@ -707,44 +743,85 @@ function leituraDispersao(dados: Dados): Leitura {
     const oCheia = ord(pts.map(p => p.o))[Math.floor(pts.length * 0.8)];
     const fMediana = ord(pts.map(p => p.f as number))[Math.floor(pts.length / 2)];
     const fila = pts.filter(p => p.o >= oCheia && (p.f as number) <= fMediana).length;
-    const pct = Math.round((100 * fila) / pts.length);
-    return [
-      pct < 3
-        ? `${c.nome}: quase nunca houve sinal de fila. Quando a imagem enche, passa mais gente, não menos.`
-        : `${c.nome}: em ${pct}% dos minutos a imagem estava cheia e passava pouca gente, sinal de fila.`,
-    ];
+    return [{nome: c.nome, pct: Math.round((100 * fila) / pts.length)}];
   });
+  const texto: string[] = [];
+  if (!resultados.length) {
+    texto.push('Ainda não há minutos medidos suficientes para uma leitura deste gráfico.');
+  } else {
+    const pior = resultados.reduce((a, b) => (b.pct > a.pct ? b : a));
+    if (pior.pct < 5) {
+      texto.push(
+        'Até aqui, nenhuma câmera mostrou o sinal clássico de engarrafamento. Mais carros na imagem quase sempre significam mais carros passando: a via enche, mas não trava.',
+      );
+    } else {
+      texto.push(
+        `O sinal de engarrafamento aparece na ${pior.nome}: em ${pior.pct}% dos minutos a imagem estava cheia e pouca gente conseguia passar. É o momento em que a via deixa de escoar o que recebe.`,
+      );
+      const tranquilas = resultados.filter(r => r.pct < 5).map(r => r.nome);
+      if (tranquilas.length) {
+        texto.push(`Já em ${lista(tranquilas)}, mais carros na imagem ainda significam mais carros passando.`);
+      }
+    }
+  }
   return {
+    texto,
     comoLer:
-      'Cada ponto é um clipe de cerca de 1 minuto de uma câmera. Quanto mais à direita, mais veículos na imagem (ocupação); quanto mais alto, mais veículos passando pela linha (fluxo). Pontos que sobem juntos para a direita mostram trânsito fluindo. Pontos à direita e embaixo, com a imagem cheia e pouca gente passando, mostram fila.',
-    agora,
+      'Cada ponto é um minuto de vídeo de uma câmera: para a direita, mais veículos na imagem; para cima, mais veículos passando. Pontos à direita e embaixo (imagem cheia, pouca gente passando) são fila.',
   };
 }
+
+const NOME_TIPO_PLURAL: Record<string, string> = {
+  moto: 'motos',
+  caminhao: 'caminhões',
+};
 
 function leituraTipos(resumo: Resumo): Leitura {
   const total = TIPOS.reduce((s, [k]) => s + (resumo.tipos[k] ?? 0), 0);
   const pct = (k: string) => Math.round((100 * (resumo.tipos[k] ?? 0)) / Math.max(total, 1));
-  return {
-    comoLer:
-      'Cada barra é um tipo de veículo. O comprimento é quantos foram contados nas últimas 24 horas, e o número ao lado dá a quantidade e a parte do total da câmera.',
-    agora: total
-      ? [
-          `${resumo.nome}: de cada 100 veículos, ${pct('carro')} são carros, ${pct('moto')} motos, ${pct('onibus')} ônibus e ${pct('caminhao')} caminhões (${numero.format(total)} veículos ao todo). Vans, SUVs e picapes entram como carro.`,
-        ]
-      : [],
-  };
+  const comoLer =
+    'Cada barra é um tipo de veículo; o comprimento é quantos foram contados nas últimas 24 horas. Vans, SUVs e picapes entram como carro.';
+  if (total < 500) {
+    return {
+      texto: [
+        `Com só ${numero.format(total)} veículos contados, ainda é cedo para tirar conclusões sobre a ${resumo.nome}: a câmera entrou na contagem há pouco.`,
+      ],
+      comoLer,
+    };
+  }
+  const carros = pct('carro');
+  const texto = [
+    carros >= 95
+      ? `Na ${resumo.nome}, praticamente tudo o que passa é carro: ${carros}% dos veículos.`
+      : `Na ${resumo.nome}, o carro domina: ${Math.round(carros / 10)} de cada 10 veículos são carros.`,
+  ];
+  const [primeiro, segundo] = ['moto', 'caminhao'].map(k => ({k, p: pct(k)})).sort((a, b) => b.p - a.p);
+  if (primeiro.p > 0) {
+    texto.push(
+      `Em seguida vêm os ${NOME_TIPO_PLURAL[primeiro.k] === 'motos' ? 'motociclistas' : 'caminhões'} (${primeiro.p}%)${segundo.p > 0 ? `, à frente dos ${NOME_TIPO_PLURAL[segundo.k] === 'motos' ? 'motociclistas' : 'caminhões'} (${segundo.p}%)` : ''}.`,
+    );
+  }
+  const onibus = pct('onibus');
+  texto.push(
+    `Os ônibus são só ${onibus || 'menos de 1'}% do que passa, mas cada um leva dezenas de pessoas: pesam muito mais no número de passageiros do que no de veículos.`,
+  );
+  if (pct('moto') < 1) {
+    texto.push(
+      'Quase nenhuma moto aparece aqui, o que provavelmente diz mais sobre o detector, que ainda perde motos, sobretudo à noite, do que sobre a rua.',
+    );
+  }
+  return {texto, comoLer};
 }
 
 function leituraCobertura(cobertura: NonNullable<Dados['cobertura']>): Leitura {
   const {dias, minutos} = cobertura;
   const diasComDado = minutos.filter(l => l.some(m => m > 0)).length;
-  const horasBoas = minutos.flat().filter(m => m >= 30).length;
   return {
-    comoLer:
-      'Cada linha é um dia e cada coluna, uma hora. Quanto mais escuro o quadrado, mais minutos de vídeo foram analisados naquela hora; quadrado vazio é hora sem coleta (computador desligado ou câmera fora do ar).',
-    agora: [
-      `Nos últimos ${dias.length} dias, ${diasComDado} tiveram coleta e ${horasBoas} horas somaram pelo menos 30 minutos de vídeo analisado.`,
+    texto: [
+      `Dos últimos ${dias.length} dias, ${diasComDado} têm registro. Até 19/11 a coleta só funcionava nos horários de pico; desde então o computador conta o dia inteiro, e cada buraco no mapa é uma hora em que ele ficou desligado ou a câmera saiu do ar.`,
     ],
+    comoLer:
+      'Cada linha é um dia e cada coluna, uma hora; quanto mais escuro o quadrado, mais minutos de vídeo analisados.',
   };
 }
 
@@ -1011,85 +1088,6 @@ function MetricCard({
   );
 }
 
-// Leitura de um gráfico em palavras: como ler e o que ele mostra agora (frases calculadas
-// dos próprios dados). Para quem não lê gráfico, e para leitor de tela.
-interface Leitura {
-  comoLer: string;
-  agora: string[];
-}
-
-function LeituraEmPalavras({leitura}: {leitura: Leitura}) {
-  return (
-    <VStack gap={3}>
-      <VStack gap={1}>
-        <Text type="body" weight="semibold">
-          Como ler
-        </Text>
-        <Text type="body">{leitura.comoLer}</Text>
-      </VStack>
-      {leitura.agora.length > 0 && (
-        <VStack gap={1}>
-          <Text type="body" weight="semibold">
-            O que ele mostra
-          </Text>
-          {leitura.agora.map(f => (
-            <Text key={f} type="body">
-              {f}
-            </Text>
-          ))}
-        </VStack>
-      )}
-    </VStack>
-  );
-}
-
-function ChartCard({
-  titulo,
-  apoio,
-  children,
-  leitura,
-}: {
-  titulo: string;
-  apoio: string;
-  children: ReactNode;
-  leitura?: Leitura;
-}) {
-  return (
-    <Card>
-      <VStack gap={4}>
-        <VStack gap={1}>
-          <HStack gap={2} vAlign="center" hAlign="between">
-            <Heading level={4} accessibilityLevel={3}>
-              {titulo}
-            </Heading>
-            {leitura && (
-              <Popover
-                content={<LeituraEmPalavras leitura={leitura} />}
-                label={`${titulo}: o gráfico em palavras`}
-                closeButtonLabel="Fechar explicação"
-                placement="below"
-                alignment="end"
-                width={380}>
-                <IconButton
-                  label={`Explicar o gráfico "${titulo}" em palavras`}
-                  tooltip="O gráfico em palavras"
-                  icon={<Icon icon={InformationCircleIcon} />}
-                  variant="ghost"
-                  size="sm"
-                />
-              </Popover>
-            )}
-          </HStack>
-          <Text type="body" color="secondary">
-            {apoio}
-          </Text>
-        </VStack>
-        {children}
-      </VStack>
-    </Card>
-  );
-}
-
 // ============= TABLE COMPONENTS =============
 
 const colunas: TableColumn<Clipe>[] = [
@@ -1235,92 +1233,6 @@ function Veredito({dados}: {dados: Dados}) {
   );
 }
 
-// ============= PONTOS CRÍTICOS DE SINISTROS =============
-
-// Período da tabela da NitTrans: 1º/1/2024 a 31/10/2026.
-const DIAS_NITTRANS = 1035;
-const frequencia = (total: number) => {
-  const dias = DIAS_NITTRANS / total;
-  return dias < 1.5 ? `cerca de ${Math.round(total / DIAS_NITTRANS)} por dia` : `cerca de 1 a cada ${Math.round(dias)} dias`;
-};
-
-function PontosCriticos({s, filtro}: {s: Sinistros; filtro: FiltroSinistros}) {
-  const graves = trechosFiltrados(s, filtro).slice(0, 5);
-  const filtrado = filtro.gravidade !== 'todos' || filtro.tipo !== 'todos';
-  const anosPrf = s.prf.anos.length === 2 ? s.prf.anos[1] - s.prf.anos[0] + 1 : 1;
-  const vias = s.nittrans.vias.slice(0, 10);
-  return (
-    <VStack gap={4}>
-      <VStack gap={1}>
-        <HStack gap={2} vAlign="center" wrap="wrap">
-          <Heading level={3} accessibilityLevel={2}>
-            Onde acontecem os sinistros
-          </Heading>
-          <Badge label={`Soma de ${s.prf.anos.join(' a ')}, não é o trânsito de hoje`} variant="orange" />
-        </HStack>
-        <Text type="body" color="secondary">
-          Números acumulados em vários anos, de fontes oficiais (PRF e NitTrans), não das
-          câmeras deste painel. Poucos trechos concentram a maior parte dos sinistros graves:
-          é onde fiscalização, sinalização e obras rendem mais.
-        </Text>
-      </VStack>
-      <Grid columns={{minWidth: 320, repeat: 'fit'}} gap={4}>
-        <ChartCard
-          titulo={`BR-101 e Ponte: trechos mais graves em ${anosPrf} anos`}
-          apoio={`Soma de ${s.prf.anos.join(' a ')} (${s.prf.anos[1]} até agora), por quilômetro, ordenada por mortos mais feridos graves. Em Niterói, no período: ${numero.format(s.prf.total_sinistros)} sinistros, ${s.prf.total_mortos} mortos e ${s.prf.total_feridos_graves} feridos graves, cerca de ${Math.round(s.prf.total_mortos / anosPrf)} mortes por ano. ${s.prf.fora_do_mapa} boletins com rodovia, km ou coordenada incoerente ficaram fora do ranking e do mapa. Fonte: PRF, dados abertos.`}>
-          <VStack gap={3}>
-            {filtrado && (
-              <Badge label={`Filtro do mapa: ${descricaoFiltro(filtro)}`} variant="neutral" />
-            )}
-            {graves.map((t, i) => (
-              <VStack key={t.nome} gap={0}>
-                <Text type="body" weight="semibold">{`${i + 1}. ${t.nome}`}</Text>
-                <Text type="body" color="secondary">
-                  {`${vitimasTexto(t)} em ${t.valor} ${descricaoFiltro(filtro, t.valor)}, em ${anosPrf} anos`}
-                </Text>
-              </VStack>
-            ))}
-            {!graves.length && (
-              <Text type="body" color="secondary">
-                Nenhum sinistro com esse filtro no período.
-              </Text>
-            )}
-          </VStack>
-        </ChartCard>
-        <ChartCard
-          titulo="Vias municipais com mais sinistros em quase 3 anos"
-          apoio="Soma de janeiro de 2024 a outubro de 2026. Conta quantidade, não gravidade. “Câmera contando”: este painel mede o trânsito na via. “Câmera sem contagem”: há câmera pública, mas ainda sem números deste projeto. Fonte: NitTrans, tabela publicada como imagem e transcrita aqui.">
-          <VStack gap={3}>
-            {vias.map((v, i) => {
-              const cam = VIAS_COM_CAMERA[v.via];
-              const n = cam ? `${cam.cameras} ${cam.cameras === 1 ? 'câmera' : 'câmeras'}` : '';
-              return (
-                <VStack key={v.via} gap={0}>
-                  <HStack gap={2} vAlign="center" wrap="wrap">
-                    <Text type="body" weight="semibold">{`${i + 1}. ${v.via}`}</Text>
-                    {cam && (
-                      <Badge
-                        label={cam.contando ? 'Câmera contando' : 'Câmera sem contagem'}
-                        variant={cam.contando ? 'green' : 'neutral'}
-                      />
-                    )}
-                  </HStack>
-                  <Text type="body" color="secondary">
-                    {`${numero.format(v.total)} sinistros em quase 3 anos (${frequencia(v.total)})${cam ? ` · ${n}${cam.contando ? ', contadas por este painel' : ', contagem ainda não ligada'}` : ''}`}
-                  </Text>
-                </VStack>
-              );
-            })}
-            <Text type="body">
-              <Link href={s.nittrans.url}>Ver a tabela original na NitTrans</Link>
-            </Text>
-          </VStack>
-        </ChartCard>
-      </Grid>
-    </VStack>
-  );
-}
-
 // ============= ANTES E DEPOIS =============
 
 const dataCurta = new Intl.DateTimeFormat('pt-BR', {timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric'});
@@ -1381,14 +1293,10 @@ function MapaRegiao({
   dados,
   sinistros,
   foco,
-  filtro,
-  aoFiltrar,
 }: {
   dados: Dados;
   sinistros: Sinistros | null;
   foco: FocoMapa | null;
-  filtro: FiltroSinistros;
-  aoFiltrar: (f: FiltroSinistros) => void;
 }) {
   const aoVivo = dados.veredito?.nivel !== 'pausado';
   const ultimo = dados.periodos?.[0];
@@ -1438,43 +1346,33 @@ function MapaRegiao({
     <VStack gap={3}>
       <VStack gap={1}>
         <Heading level={3} accessibilityLevel={2}>
-          Câmeras e sinistros no mapa
+          As câmeras no mapa
         </Heading>
         <Text type="body" color="secondary">
-          Pontos são as câmeras, com a cor da situação agora. Manchas vermelhas são sinistros na
-          BR-101 e na Ponte somados de vários anos, maiores onde há mais. Toque para ver o
-          resumo. No canto do mapa, mostre ou esconda câmeras e sinistros; abaixo, filtre os
-          sinistros por gravidade e tipo (vale também para o ranking da PRF). Posições das
-          câmeras aproximadas.
+          Cada ponto é uma câmera, com a cor da situação agora; toque para ver o resumo. Posições
+          aproximadas. Os sinistros de vários anos ficam numa camada desligada (ligue no canto do
+          mapa) e, com ranking e filtros, na página <Link href="sinistros/">Sinistros</Link>.
         </Text>
       </VStack>
-      {sinistros && <FiltroDeSinistros filtro={filtro} aoMudar={aoFiltrar} />}
       <Suspense fallback={<Spinner label="Carregando o mapa" />}>
         <Mapa
           id={ID_MAPA}
           foco={foco}
           pontos={pontos}
-          areas={(sinistros ? trechosFiltrados(sinistros, filtro) : [])
+          sinistrosLigados={false}
+          areas={(sinistros ? trechosFiltrados(sinistros, SEM_FILTRO) : [])
             .filter(t => t.lat != null && t.lon != null)
             .map(t => ({
               nome: t.nome,
               lat: t.lat!,
               lon: t.lon!,
               sinistros: t.valor,
-              texto: `${t.valor} ${descricaoFiltro(filtro, t.valor)}, com ${vitimasTexto(t)}, de ${sinistros!.prf.anos.join(' a ')} (PRF).`,
+              texto: `${t.valor} ${descricaoFiltro(SEM_FILTRO, t.valor)}, com ${vitimasTexto(t)}, de ${sinistros!.prf.anos.join(' a ')} (PRF).`,
             }))}
           descricao={`Mapa da saída da Ponte com ${pontos.length} câmeras: ${pontos.map(p => p.nome).join(', ')}.`}
         />
       </Suspense>
       <HStack gap={4} vAlign="center" wrap="wrap">
-        {sinistros && (
-          <HStack gap={2} vAlign="center">
-            <svg width="16" height="16" aria-hidden="true">
-              <circle cx={8} cy={8} r={7} fill="#b42318" fillOpacity={0.35} />
-            </svg>
-            <Text type="body">{`BR-101 e Ponte, ${descricaoFiltro(filtro)}, soma de 2022 a 2026 (PRF)`}</Text>
-          </HStack>
-        )}
         {legenda.map(([cor, nome]) => (
           <HStack key={nome} gap={2} vAlign="center">
             <svg width="16" height="16" aria-hidden="true">
@@ -1493,8 +1391,7 @@ function MapaRegiao({
         )}
       </HStack>
       <Text type="body" color="secondary">
-        Só as 2 câmeras da Jansen de Melo são contadas, e essa contagem ainda não foi conferida
-        por amostragem: use como indicação.
+        A contagem ainda não foi conferida por amostragem: use como indicação.
       </Text>
     </VStack>
   );
@@ -2279,7 +2176,6 @@ export default function Painel() {
   // 5 períodos não cabem por extenso em 375 px: no celular os rótulos encurtam
   const estreito = useMediaQuery('(max-width: 480px)');
   const [foco, setFoco] = useState<FocoMapa | null>(null);
-  const [filtroSin, setFiltroSin] = useState<FiltroSinistros>({gravidade: 'todos', tipo: 'todos'});
   const noMapa = Object.fromEntries(
     (dados?.regiao ?? []).filter(p => p.lat != null && p.lon != null).map(p => [p.nome, p.id]),
   );
@@ -2363,10 +2259,7 @@ export default function Painel() {
                   dados={dados}
                   sinistros={sinistros}
                   foco={foco}
-                  filtro={filtroSin}
-                  aoFiltrar={setFiltroSin}
                 />
-                {sinistros && <PontosCriticos s={sinistros} filtro={filtroSin} />}
                 <AntesEDepois lista={dados.antes_depois ?? []} />
                 <Divider />
                 <Collapsible

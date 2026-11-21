@@ -44,12 +44,14 @@ export default function Mapa({
   descricao,
   foco = null,
   id,
+  sinistrosLigados = true,
 }: {
   pontos: PontoMapa[];
   areas?: AreaMapa[];
   descricao: string;
   foco?: FocoMapa | null;
   id?: string; // âncora para a página rolar até o mapa
+  sinistrosLigados?: boolean; // camada de sinistros começa ligada? (no painel ao vivo, não)
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const reduzirMovimento = useMovimentoReduzido();
@@ -79,7 +81,10 @@ export default function Mapa({
     // Sinistros primeiro: ficam por baixo das câmeras. Cada grupo é uma camada que a pessoa
     // liga e desliga pelo controle nativo do Leaflet, no canto do mapa.
     const todas: L.CircleMarker[] = [];
-    const sinistros = L.layerGroup().addTo(mapa);
+    const sinistros = L.layerGroup();
+    if (sinistrosLigados) {
+      sinistros.addTo(mapa);
+    }
     for (const a of areas) {
       const m = L.circleMarker([a.lat, a.lon], {
         radius: 6 + 2.2 * Math.sqrt(a.sinistros),
@@ -90,7 +95,10 @@ export default function Mapa({
         .bindTooltip(a.nome, {direction: 'top'})
         .bindPopup(`<strong>${escapar(a.nome)}</strong><br>${escapar(a.texto)}`)
         .addTo(sinistros);
-      todas.push(m);
+      // enquadramento inicial só com o que aparece (camada desligada não puxa o zoom)
+      if (sinistrosLigados || !pontos.length) {
+        todas.push(m);
+      }
     }
     const cameras = L.layerGroup().addTo(mapa);
     marcasRef.current = {};
@@ -150,7 +158,7 @@ export default function Mapa({
       camerasRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chave, reduzirMovimento]);
+  }, [chave, reduzirMovimento, sinistrosLigados]);
   useEffect(() => {
     const m = foco && marcasRef.current[foco.id];
     const mapa = mapaRef.current;
