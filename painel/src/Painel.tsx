@@ -53,6 +53,7 @@ interface Camera {
   id: string;
   nome: string;
   sentido_confirmado?: boolean;
+  sentidos?: Record<string, string>; // nomes desta câmera; sem eles, valem os gerais
 }
 
 interface PorSentido {
@@ -265,22 +266,45 @@ const TIPOS: Array<[string, string]> = [
 ];
 const AO_VIVO_MIN = 10; // coleta conta como ativa se o último clipe tem menos que isso
 
-// Sentido da imagem ("desce" = vem na direção da câmera) → sentido real na avenida.
-// O texto vem de dados.sentidos (coletor.py), para ter uma única fonte.
+// Sentido da imagem ("desce" = vem na direção da câmera) → sentido real na via. O texto vem
+// de dados.cameras[].sentidos (coletor.CAMERAS), com dados.sentidos (os da Jansen) de reserva.
 const SENTIDOS = ['desce', 'sobe'] as const;
 const MIN_TOTAL = 10; // um sentido só aparece se a câmera contou ao menos isso (some o ruído)
 
-const rotulo = (dados: Dados, s: string) => {
-  const t = dados.sentidos?.[s] ?? s;
+const rotuloMin = (dados: Dados, s: string, camera?: string) =>
+  dados.cameras.find(c => c.id === camera)?.sentidos?.[s] ?? dados.sentidos?.[s] ?? s; // mantém "Icaraí"
+const rotulo = (dados: Dados, s: string, camera?: string) => {
+  const t = rotuloMin(dados, s, camera);
   return t.charAt(0).toUpperCase() + t.slice(1);
 };
+// Câmera com nomes próprios só tem os sentidos que nomeia: numa via de mão única o outro
+// sentido não existe, e o pouco que a linha pega nele é erro do rastreador.
+const existe = (dados: Dados, camera: string, s: string) => {
+  const proprios = dados.cameras.find(c => c.id === camera)?.sentidos;
+  return !proprios || s in proprios;
+};
 const visivel = (dados: Dados, camera: string, s: string) =>
+  existe(dados, camera, s) &&
   (dados.resumo.find(r => r.id === camera)?.por_sentido?.[s]?.total ?? 0) >= MIN_TOTAL;
-const rotuloMin = (dados: Dados, s: string) => dados.sentidos?.[s] ?? s; // mantém "Icaraí"
+
+// Um gráfico de fluxo por sentido real ("para a ponte", "vindo do Fonseca"...), com cada
+// câmera no sentido da imagem que leva a ele: câmeras de vias diferentes não se misturam
+// só porque, na imagem, os veículos se afastam nas duas.
+type GrupoSentido = {rotulo: string; pares: Array<[string, Sentido]>};
+function gruposDeSentido(dados: Dados): GrupoSentido[] {
+  const grupos = new Map<string, Array<[string, Sentido]>>();
+  for (const s of SENTIDOS)
+    for (const c of dados.cameras)
+      if (visivel(dados, c.id, s)) {
+        const r = rotuloMin(dados, s, c.id);
+        grupos.set(r, [...(grupos.get(r) ?? []), [c.id, s]]);
+      }
+  return [...grupos].map(([rotulo, pares]) => ({rotulo, pares}));
+}
 // Só avisa das câmeras que aparecem no gráfico daquele sentido.
-const notaSentido = (dados: Dados, s: string) => {
+const notaSentido = (dados: Dados, g: GrupoSentido) => {
   const pendentes = dados.cameras.filter(
-    c => c.sentido_confirmado === false && visivel(dados, c.id, s),
+    c => c.sentido_confirmado === false && g.pares.some(([id]) => id === c.id),
   );
   return pendentes.length
     ? `Sentido a confirmar em: ${pendentes.map(c => c.nome).join(', ')} (inferido do nome da câmera).`
@@ -390,22 +414,22 @@ function SerieTooltip({
 
 function SerieChart({
   dados,
-  sentido,
+  grupo,
   unidade,
   formato,
   descricao,
 }: {
   dados: Dados;
-  sentido?: (typeof SENTIDOS)[number]; // com sentido: fluxo; sem: ocupação (vale para os dois)
+  grupo?: GrupoSentido; // com grupo: fluxo naquele sentido real; sem: ocupação
   unidade: string;
   formato: Intl.NumberFormat;
   descricao: string;
 }) {
-  const chaveDe = (id: string) => (sentido ? `${id}_${sentido}_fluxo` : `${id}_ocup`);
+  const chaveDe = (id: string) => chaveSerie(id, grupo);
   // índice no array original mantém a cor da câmera igual em todos os gráficos
   const cams = dados.cameras
     .map((c, i) => ({c, i}))
-    .filter(({c}) => !sentido || visivel(dados, c.id, sentido));
+    .filter(({c}) => !grupo || grupo.pares.some(([id]) => id === c.id));
   if (!cams.length) {
     return (
       <Text type="supporting" color="secondary">
@@ -541,6 +565,9 @@ function Sparkline({valores, cor, id}: {valores: number[]; cor: string; id: stri
 // ajudam. Se faltar dado, o texto encurta em vez de inventar.
 
 type Sentido = (typeof SENTIDOS)[number];
+// chave da série em dados.serie: fluxo da câmera no sentido do grupo, ou a ocupação
+const chaveSerie = (id: string, grupo?: GrupoSentido) =>
+  grupo ? `${id}_${grupo.pares.find(([c]) => c === id)?.[1]}_fluxo` : `${id}_ocup`;
 type Trecho = {t: number; v: number};
 
 const media = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1);
@@ -650,17 +677,17 @@ function frasePatamar(a: Analise, unidade: string, formato: Intl.NumberFormat, o
 
 function leituraSerie(
   dados: Dados,
-  sentido: Sentido | undefined,
+  grupo: GrupoSentido | undefined,
   unidade: string,
   formato: Intl.NumberFormat,
 ): Leitura {
-  const cams = dados.cameras.filter(c => !sentido || visivel(dados, c.id, sentido));
-  const chave = (id: string) => (sentido ? `${id}_${sentido}_fluxo` : `${id}_ocup`);
+  const cams = dados.cameras.filter(c => !grupo || grupo.pares.some(([id]) => id === c.id));
+  const chave = (id: string) => chaveSerie(id, grupo);
   const analises = cams.flatMap(c => {
     const a = analisar(c.nome, serieDe(dados, p => p[chave(c.id)] as number | null));
     return a ? [{c, a}] : [];
   });
-  const comoLer = sentido
+  const comoLer = grupo
     ? `Cada linha é uma câmera; a altura é quantos veículos por hora passaram, em médias de ${dados.balde_min} minutos. Buraco na linha é tempo sem coleta; degrau brusco pode ser troca do detector, não do trânsito.`
     : 'Cada linha é uma câmera; a altura é quantos veículos aparecem, em média, em cada quadro do vídeo.';
   if (!analises.length) {
@@ -672,8 +699,8 @@ function leituraSerie(
   // a câmera de maior pico, entre as que têm ao menos 8 h de registro, conduz a narrativa
   const base = (maduras.length ? maduras : analises).reduce((x, y) => (y.a.pico.v > x.a.pico.v ? y : x));
   const {a} = base;
-  if (sentido) {
-    const onde = `No sentido ${rotuloMin(dados, sentido)}`;
+  if (grupo) {
+    const onde = `No sentido ${grupo.rotulo}`;
     const madrugada = Number(hora.format(a.vale.t).slice(0, 2)) <= 5;
     if (madrugada && a.subida && a.horas >= 12) {
       texto.push(
@@ -1535,8 +1562,10 @@ function ResumoPeriodo({janela, dados}: {janela: Janela; dados: Dados}) {
       </VStack>
       <Grid columns={{minWidth: 320, repeat: 'fit'}} gap={4}>
         {r.cameras.map(c => {
-          const fluxos = SENTIDOS.filter(s => (c.fluxo_h[s] ?? 0) >= MIN_TOTAL).map(
-            s => `${numero.format(c.fluxo_h[s] ?? 0)} veículos/h ${rotuloMin(dados, s)}`,
+          const fluxos = SENTIDOS.filter(
+            s => existe(dados, c.id, s) && (c.fluxo_h[s] ?? 0) >= MIN_TOTAL,
+          ).map(
+            s => `${numero.format(c.fluxo_h[s] ?? 0)} veículos/h ${rotuloMin(dados, s, c.id)}`,
           );
           return (
             <Card key={c.id}>
@@ -1685,8 +1714,10 @@ function CartaoPeriodo({p, dados}: {p: Periodo; dados: Dados}) {
           <Text type="body">{p.frase}</Text>
         </VStack>
         {p.cameras.map(c => {
-          const fluxos = SENTIDOS.filter(s => (c.fluxo_h[s] ?? 0) >= MIN_TOTAL).map(
-            s => `${numero.format(c.fluxo_h[s] ?? 0)} veículos/h ${rotuloMin(dados, s)}`,
+          const fluxos = SENTIDOS.filter(
+            s => existe(dados, c.id, s) && (c.fluxo_h[s] ?? 0) >= MIN_TOTAL,
+          ).map(
+            s => `${numero.format(c.fluxo_h[s] ?? 0)} veículos/h ${rotuloMin(dados, s, c.id)}`,
           );
           return (
             <VStack key={c.id} gap={2}>
@@ -2017,18 +2048,18 @@ function Resumo24h({dados}: {dados: Dados}) {
       </Grid>
 
       <Grid columns={{minWidth: 420, repeat: 'fit'}} gap={4}>
-        {SENTIDOS.map(s => (
+        {gruposDeSentido(dados).map(g => (
           <ChartCard
-            key={s}
-            titulo={`Fluxo · ${rotuloMin(dados, s)}`}
-            leitura={leituraSerie(dados, s, 'veículos/h', numero)}
-            apoio={`Veículos por hora que cruzam a linha de contagem, em médias de ${dados.balde_min} minutos. ${notaSentido(dados, s)}`}>
+            key={g.rotulo}
+            titulo={`Fluxo · ${g.rotulo}`}
+            leitura={leituraSerie(dados, g, 'veículos/h', numero)}
+            apoio={`Veículos por hora que cruzam a linha de contagem, em médias de ${dados.balde_min} minutos. ${notaSentido(dados, g)}`}>
             <SerieChart
               dados={dados}
-              sentido={s}
+              grupo={g}
               unidade="veículos/h"
               formato={numero}
-              descricao={`Gráfico de linhas do fluxo de veículos por hora ${rotuloMin(dados, s)}, por câmera, nas últimas 24 horas.`}
+              descricao={`Gráfico de linhas do fluxo de veículos por hora ${g.rotulo}, por câmera, nas últimas 24 horas.`}
             />
           </ChartCard>
         ))}
@@ -2088,7 +2119,7 @@ function Conteudo({dados}: {dados: Dados}) {
                 return (
                   <MetricCard
                     key={`${r.id}-${s}`}
-                    label={rotulo(dados, s)}
+                    label={rotulo(dados, s, r.id)}
                     value={f == null ? 'sem dados' : numero.format(f)}
                     unidade={f == null ? '' : 'veículos/h'}
                     apoio={`${r.nome} · média da última hora coletada${r.sentido_confirmado === false ? ' · sentido a confirmar' : ''}`}>
@@ -2137,18 +2168,18 @@ function Conteudo({dados}: {dados: Dados}) {
         Ao longo do tempo
       </Heading>
       <Grid columns={{minWidth: 420, repeat: 'fit'}} gap={4}>
-        {SENTIDOS.map(s => (
+        {gruposDeSentido(dados).map(g => (
           <ChartCard
-            key={s}
-            titulo={`Fluxo · ${rotuloMin(dados, s)}`}
-            leitura={leituraSerie(dados, s, 'veículos/h', numero)}
-            apoio={`Veículos por hora que cruzam a linha de contagem, em médias de ${dados.balde_min} minutos. Horário de Brasília. ${notaSentido(dados, s)}`}>
+            key={g.rotulo}
+            titulo={`Fluxo · ${g.rotulo}`}
+            leitura={leituraSerie(dados, g, 'veículos/h', numero)}
+            apoio={`Veículos por hora que cruzam a linha de contagem, em médias de ${dados.balde_min} minutos. Horário de Brasília. ${notaSentido(dados, g)}`}>
             <SerieChart
               dados={dados}
-              sentido={s}
+              grupo={g}
               unidade="veículos/h"
               formato={numero}
-              descricao={`Gráfico de linhas do fluxo de veículos por hora ${rotuloMin(dados, s)}, por câmera, ao longo do tempo. Os mesmos dados estão na tabela de últimos clipes.`}
+              descricao={`Gráfico de linhas do fluxo de veículos por hora ${g.rotulo}, por câmera, ao longo do tempo. Os mesmos dados estão na tabela de últimos clipes.`}
             />
           </ChartCard>
         ))}

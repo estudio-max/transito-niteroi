@@ -43,7 +43,7 @@ CAMERAS = {
         # confirmou que ela leva quem vem do Fonseca pela Alameda e sobe a ponte. A pista da
         # direita (do Fonseca para o Centro, o Santana ou a BR) não é contada: pede outra linha.
         "linha": ((30, 400), (710, 400)),
-        "sentidos": {"desce": "vindo da ponte", "sobe": "para a ponte"},
+        "sentidos": {"sobe": "para a ponte"},  # mão única: só o sentido que existe
         "sentido_confirmado": True,
     },
     "000021": {
@@ -52,9 +52,12 @@ CAMERAS = {
         # inferior direito → topo). A linha única só pega a via vertical/diagonal; o fluxo
         # completo (por direção) fica na tabela movimentos (RF6). Linha PROVISÓRIA (21/11).
         "linha": ((600, 300), (790, 300)),
-        # Folha de sentidos de 21/11/2026: o autor leu o laranja (se afasta) como a saída da
-        # ponte mais quem vem do Ponto Cem Réis, indo para o Fonseca, mas ainda tem dúvida.
-        "sentido_confirmado": False,
+        # Confirmado pelo autor em 21/11/2026 (folha de sentidos + Street View, referência: o
+        # hospital veterinário à esquerda): o laranja (se afasta) vem do Fonseca em direção à
+        # ponte, e pode seguir para a ponte, o Ponto Cem Réis, o Barreto ou a BR. A pista da
+        # esquerda, sem linha, seria a que vem da ponte para o Fonseca.
+        "sentidos": {"sobe": "vindo do Fonseca"},  # mão única
+        "sentido_confirmado": True,
     },
     "000026": {
         "nome": "Jansen sent. Ponte",
@@ -137,7 +140,9 @@ REGIAO = [
 
 # Em todas as câmeras da Jansen de Melo a imagem olha para a ponte: o veículo que vem
 # em direção à câmera ("desce" na imagem) vai da ponte para Icaraí; o que se afasta
-# ("sobe") vai para a ponte. Câmera de outra via tem os seus em CAMERAS[...]["sentidos"].
+# ("sobe") vai para a ponte. Câmera de outra via tem os seus em CAMERAS[...]["sentidos"]; numa
+# via de mão única só o sentido que existe tem nome, e o outro fica fora do painel (o pouco
+# que a linha pega nele é erro do rastreador, como um veículo parado na fila).
 ROTULO_SENTIDO = {"desce": "da ponte para Icaraí", "sobe": "para a ponte"}
 
 

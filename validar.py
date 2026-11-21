@@ -26,7 +26,6 @@ from coletor import (
     CAMERAS,
     FUSO,
     REGIAO,
-    ROTULO_SENTIDO,
     SENTIDOS,
     VEICULOS,
     abrir_clipe,
@@ -35,6 +34,7 @@ from coletor import (
     descritor,
     linha_do_clipe,
     rastrear,
+    rotulos_sentido,
 )
 
 PASTA = Path("validacao")
@@ -659,7 +659,11 @@ def pagina_sentidos(fichas):
             f'<li><b style="color:#{"".join(f"{c:02x}" for c in COR_SENTIDO[s][::-1])}">'
             f"{NOME_COR[s]}</b>: "
             f"{f[s]} veículos que {EXPLICA_SENTIDO[s]} (no sistema, “{s}”). "
-            f"Hoje o painel chama de “{ROTULO_SENTIDO[s]}”.</li>"
+            + (
+                f"Hoje o painel chama de “{rotulos_sentido(cam)[s]}”.</li>"
+                if s in rotulos_sentido(cam)
+                else "Fica fora do painel (via de mão única).</li>"
+            )
             for s in SENTIDOS
         ) + (
             f"<li><b style='color:#bebebe'>Cinza</b>: {f.get('fora', 0)} veículos que andaram "
