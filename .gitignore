@@ -1,6 +1,10 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.pytest_tmp/
+.pytest_tmp2/
+.tmp/
+pytest_out.txt
 .ruff_cache/
 .coverage
 *.pt
@@ -19,3 +23,8 @@ painel/public/dados-por-hora.csv
 painel/public/feed.xml
 painel/public/sinistros.json
 painel/public/texto.html
+# SQLite em WAL e quadros temporários de calibração
+*.db-wal
+*.db-shm
+*.db-journal
+_frame_*.png

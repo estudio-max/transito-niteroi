@@ -34,6 +34,23 @@ SENTIDOS = ("desce", "sobe")  # na imagem, com a linha A→B da esquerda p/ dire
 # deve cortar todas as faixas, longe de onde os veículos param.
 # ponytail: uma linha por câmera; contagem por movimento (RF6) pede várias linhas.
 CAMERAS = {
+    "000019": {
+        "nome": "Alameda, acesso à Ponte",
+        # 1280x720 (as outras duas são 800x450). Linha PROVISÓRIA (21/11/2026), calibrada por
+        # rastreamento automático, SEM conferência visual: a via desce/sobe no lado esquerdo
+        # do quadro (pés dos veículos em x 20..710), com o cruzamento no topo (y<320).
+        # Confirmar olhando um quadro antes de usar o número; sentido ainda não conferido.
+        "linha": ((30, 400), (710, 400)),
+        "sentido_confirmado": False,
+    },
+    "000021": {
+        "nome": "Alameda x João Brasil",
+        # 800x450. CRUZAMENTO: via horizontal no topo (y 150–230) e via diagonal (canto
+        # inferior direito → topo). A linha única só pega a via vertical/diagonal; o fluxo
+        # completo (por direção) fica na tabela movimentos (RF6). Linha PROVISÓRIA (21/11).
+        "linha": ((600, 300), (790, 300)),
+        "sentido_confirmado": False,
+    },
     "000026": {
         "nome": "Jansen sent. Ponte",
         # A câmera alterna entre dois enquadramentos ao longo do dia e cada um pede uma linha:
@@ -213,6 +230,35 @@ def contar(trajetorias, linha):
     return total
 
 
+MOVIMENTO_MIN = 20  # deslocamento mínimo (px) para a trajetória contar como movimento
+
+
+def classificar_movimento(dx, dy, minimo=MOVIMENTO_MIN):
+    """Rótulo do movimento de uma trajetória a partir do deslocamento (dx, dy) do pé da
+    caixa: leste/oeste/norte/sul pelo eixo dominante. None se o veículo mal se moveu
+    (parado). É a base do RF6: conta o fluxo de um cruzamento por direção."""
+    if (dx * dx + dy * dy) ** 0.5 < minimo:
+        return None
+    if abs(dx) >= abs(dy):
+        return "leste" if dx > 0 else "oeste"
+    return "sul" if dy > 0 else "norte"
+
+
+def movimentos(trajetorias, minimo=MOVIMENTO_MIN):
+    """Counter{'<movimento>_<classe>': n}: uma trajetória = um movimento, pela direção do
+    deslocamento (primeiro → último pé da caixa). Independe da linha de contagem, então
+    captura também a via horizontal de um cruzamento (RF6)."""
+    total = Counter()
+    for classe, pontos in trajetorias.values():
+        if len(pontos) < 2:
+            continue
+        (x0, y0), (x1, y1) = pontos[0], pontos[-1]
+        m = classificar_movimento(x1 - x0, y1 - y0, minimo)
+        if m:
+            total[f"{m}_{classe}"] += 1
+    return total
+
+
 def velocidade_relativa(pts, q, fps, janela_s=1.0):
     """Deslocamento do pé da caixa no segundo em volta do quadro q, medido em alturas da
     própria caixa por segundo. Deslocamento e caixa encolhem juntos com a distância da
@@ -246,13 +292,24 @@ def passagens(historico, classes, linha, fps):
     return sorted(saida, key=lambda p: p[:3])
 
 
-def gravar_passagens(db, camera, clipe_utc, lista):
+def gravar_passagens(db, camera, clipe_utc, lista, commit=True):
     db.executemany(
         "INSERT INTO passagens (camera, clipe_utc, segundo, classe, sentido, vel_rel)"
         " VALUES (?, ?, ?, ?, ?, ?)",
         [(camera, clipe_utc, *p) for p in lista],
     )
-    db.commit()
+    if commit:
+        db.commit()
+
+
+def gravar_movimentos(db, camera, clipe_utc, total, commit=True):
+    db.executemany(
+        "INSERT INTO movimentos (camera, clipe_utc, movimento, classe, quantidade)"
+        " VALUES (?, ?, ?, ?, ?)",
+        [(camera, clipe_utc, *m.split("_", 1), n) for m, n in total.items()],
+    )
+    if commit:
+        db.commit()
 
 
 def rastrear(video, modelo, passo=1, ao_quadro=None, **detector):
@@ -295,6 +352,8 @@ def rastrear(video, modelo, passo=1, ao_quadro=None, **detector):
 def abrir_banco(caminho):
     # 30 s de paciência: outro programa (ou a publicação) pode estar gravando
     db = sqlite3.connect(caminho, timeout=30)
+    db.execute("PRAGMA journal_mode=WAL")  # leitor não bloqueia o escritor (publicação concorrente)
+    db.execute("PRAGMA synchronous=NORMAL")
     db.execute(
         "CREATE TABLE IF NOT EXISTS clipes (camera TEXT, clipe_utc TEXT, duracao_s REAL,"
         " ocupacao REAL, "
@@ -313,6 +372,14 @@ def abrir_banco(caminho):
     )
     if "vel_rel" not in {r[1] for r in db.execute("PRAGMA table_info(passagens)")}:
         db.execute("ALTER TABLE passagens ADD COLUMN vel_rel REAL")  # piloto de velocidade
+    # cada veículo por direção de movimento (RF6), independente da linha de contagem
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS movimentos (camera TEXT, clipe_utc TEXT,"
+        " movimento TEXT, classe TEXT, quantidade INTEGER)"
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS ix_clipes_utc ON clipes(clipe_utc)")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_passagens_clipe ON passagens(camera, clipe_utc)")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_movimentos_clipe ON movimentos(camera, clipe_utc)")
     return db
 
 
@@ -325,7 +392,7 @@ def ja_processado(db, camera, clipe_utc):
     )
 
 
-def gravar(db, camera, clipe_utc, duracao, ocupacao, contagem, parametros=None):
+def gravar(db, camera, clipe_utc, duracao, ocupacao, contagem, parametros=None, commit=True):
     colunas = COLUNAS + PARAMETROS
     parametros = parametros or {}
     db.execute(
@@ -340,7 +407,8 @@ def gravar(db, camera, clipe_utc, duracao, ocupacao, contagem, parametros=None):
             *(parametros.get(p) for p in PARAMETROS),
         ),
     )
-    db.commit()
+    if commit:
+        db.commit()
 
 
 def abrir_clipe(camera):
@@ -355,6 +423,7 @@ def criar_tabela_estado(db):
         "CREATE TABLE IF NOT EXISTS estado_cameras (camera TEXT, verificado_utc TEXT,"
         " http INTEGER, video_utc TEXT)"
     )
+    db.execute("CREATE INDEX IF NOT EXISTS ix_estado_cam ON estado_cameras(camera, verificado_utc)")
 
 
 def checar_cameras(db, agora_utc, cabecalho=None):
@@ -409,10 +478,13 @@ def coletar(db, modelo, camera, passo, nome_modelo="", detector=None):
         "linha": str(linha),
         "detector": str(detector or {}),
     }
-    gravar(db, camera, clipe_utc, duracao, ocupacao, contagem, parametros)
+    gravar(db, camera, clipe_utc, duracao, ocupacao, contagem, parametros, commit=False)
     fps = n_quadros[0] / duracao if duracao else 10
     classes = {t: c for t, (c, _) in trajetorias.items()}
-    gravar_passagens(db, camera, clipe_utc, passagens(historico, classes, linha, fps))
+    # clipe, passagens e movimentos na mesma transação: queda no meio não deixa clipe sem detalhe
+    gravar_passagens(db, camera, clipe_utc, passagens(historico, classes, linha, fps), commit=False)
+    gravar_movimentos(db, camera, clipe_utc, movimentos(trajetorias), commit=False)
+    db.commit()
     achados = incidentes.parados(historico, {t: c for t, (c, _) in trajetorias.items()}, fps)
     novos = incidentes.registrar(db, camera, clipe_utc, achados, quadros)
     for i in novos:
@@ -488,6 +560,9 @@ def main():
     ultima_hora_clima = ultimo_backup = None
     while True:
         inicio = time.monotonic()
+        if args.uma_vez and not dentro_janela(datetime.now(FUSO), janelas, not args.fim_de_semana):
+            print("fora das janelas de coleta", args.janelas or "", flush=True)
+            break
         if not dentro_janela(datetime.now(FUSO), janelas, not args.fim_de_semana):
             if not esperando:
                 print("fora das janelas de coleta, aguardando", args.janelas, flush=True)

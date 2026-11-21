@@ -22,6 +22,16 @@ MESMO_LUGAR_PX = 40  # dois parados a até essa distância são o mesmo veículo
 EMENDA_MIN = 5  # clipes até essa distância no tempo são "seguidos"
 QUADRO_A_CADA = 10  # guarda 1 quadro em 10 (1 por segundo a 10 qps) para a classificação
 
+# Gate de publicação (20/11/2026): um incidente só é o mesmo evento quando o MESMO
+# veículo continua parado no ponto. Posição sozinha fazia a fila de um semáforo (carros
+# diferentes no mesmo lugar) virar "enguiço" publicado. Ver STEPS.md, fase 2m.
+IDENTIDADE_MIN = 0.55  # interseção mínima do histograma de cor para dizer que é o mesmo veículo
+ALTURA_MIN = 0.55  # a caixa não pode encolher/crescer além disso entre clipes seguidos
+ALTURA_MAX = 1.8
+VIZINHOS_FILA = 4  # com tantos outros parados por perto, é fila: não abre incidente
+CLIPES_MAX = 120  # teto de duração de um incidente (~2 h): além disso não estende
+RECORRENTE_H = 6  # mesmo ponto já classificado há menos disso não chama o modelo de novo
+
 # ponytail: modelo pequeno que cabe na RTX 3050 (6 GB); sobe para qwen3-vl:8b se errar muito
 MODELO_VLM = "qwen3-vl:4b-instruct"
 OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -101,6 +111,42 @@ def _perto(a, b, limite=MESMO_LUGAR_PX):
     return abs(a["x"] - b["x"]) <= limite and abs(a["y"] - b["y"]) <= limite
 
 
+def _sim(da, db):
+    """Interseção de histograma em [0, 1] entre dois descritores "1,2,3,..."."""
+    a = [int(v) for v in da.split(",")]
+    b = [int(v) for v in db.split(",")]
+    ta, tb = sum(a), sum(b)
+    if not ta or not tb or len(a) != len(b):
+        return 0.0
+    return sum(min(x, y) for x, y in zip(a, b, strict=True)) / max(ta, tb)
+
+
+def _mesmo_veiculo(a, b):
+    """Dois parados são o mesmo veículo se a classe e o tamanho batem e o descritor de
+    cor é parecido. Sem descritor (ex.: clipe sem quadro guardado), vale a posição."""
+    if a.get("classe") != b.get("classe"):
+        return False
+    ha, hb = a.get("h"), b.get("h")
+    if ha and hb and not (ALTURA_MIN <= hb / ha <= ALTURA_MAX):
+        return False
+    da, db = a.get("descritor"), b.get("descritor")
+    if not da or not db:
+        return True
+    return _sim(da, db) >= IDENTIDADE_MIN
+
+
+def _recorrente(db, camera, p, clipe_utc):
+    """Verdadeiro se um incidente já foi aberto neste ponto há menos de RECORRENTE_H horas.
+    Evita reclassificar o mesmo objeto parado (ex.: carro estacionado) várias vezes."""
+    desde = (datetime.fromisoformat(clipe_utc) - timedelta(hours=RECORRENTE_H)).isoformat()
+    for x, y in db.execute(
+        "SELECT x, y FROM incidentes WHERE camera=? AND inicio_utc>=?", (camera, desde)
+    ):
+        if _perto(p, {"x": x, "y": y}):
+            return True
+    return False
+
+
 def observador():
     """Callback para `coletor.rastrear(ao_quadro=...)` que guarda o histórico de cada
     trajetória e 1 quadro por segundo em JPEG (só em memória).
@@ -149,6 +195,32 @@ def imagens(quadros, parado):
     corte = cv2.resize(corte, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
     saida.append(cv2.imencode(".jpg", corte)[1].tobytes())
     return saida
+
+
+def descritor(quadros, parado):
+    """Histograma HSV do recorte do veículo no quadro mais próximo do fim do trecho.
+    Devolve "1,2,3,..." (48 números, sem pessoa/placa reconhecível) ou None sem quadro.
+    Serve para saber se o parado de um clipe é o MESMO veículo do clipe anterior."""
+    import cv2
+    import numpy as np
+
+    if not quadros:
+        return None
+    q = min(quadros, key=lambda k: abs(k - parado["quadro_fim"]))
+    img = cv2.imdecode(np.frombuffer(quadros[q], np.uint8), cv2.IMREAD_COLOR)
+    x, y, w, h = parado["x"], parado["y"], parado["w"], parado["h"]
+    altura, largura = img.shape[:2]
+    x0 = max(0, x - w // 2)
+    x1 = min(largura, x + w // 2)
+    y0 = max(0, y - h)
+    y1 = min(altura, y)
+    if x1 - x0 < 4 or y1 - y0 < 4:
+        return None
+    corte = img[y0:y1, x0:x1]
+    hsv = cv2.cvtColor(corte, cv2.COLOR_BGR2HSV)
+    hist = cv2.calcHist([hsv], [0, 1], None, [12, 4], [0, 180, 0, 256]).astype(np.float32)
+    hist /= hist.sum() + 1e-6
+    return ",".join(str(int(round(v * 1000))) for v in hist.ravel())
 
 
 ESQUEMA = {
@@ -200,54 +272,78 @@ def classificar_vlm(jpgs, parado):
 def criar_tabelas(db):
     db.execute(
         "CREATE TABLE IF NOT EXISTS parados (camera TEXT, clipe_utc TEXT, classe TEXT,"
-        " x INTEGER, y INTEGER, segundos INTEGER, vizinhos INTEGER)"
+        " x INTEGER, y INTEGER, segundos INTEGER, vizinhos INTEGER, h INTEGER, descritor TEXT)"
     )
+    for col, tipo in (("h", "INTEGER"), ("descritor", "TEXT")):
+        if col not in {r[1] for r in db.execute("PRAGMA table_info(parados)")}:
+            db.execute(f"ALTER TABLE parados ADD COLUMN {col} {tipo}")
     db.execute(
         "CREATE TABLE IF NOT EXISTS incidentes (id INTEGER PRIMARY KEY, camera TEXT,"
         " inicio_utc TEXT, fim_utc TEXT, clipes INTEGER, classe TEXT, x INTEGER, y INTEGER,"
         " tipo TEXT, confianca TEXT, descricao TEXT, modelo TEXT)"
     )
+    db.execute("CREATE INDEX IF NOT EXISTS ix_parados_clipe ON parados(camera, clipe_utc)")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_incidentes_fim ON incidentes(camera, fim_utc)")
 
 
 def registrar(db, camera, clipe_utc, achados, quadros, classificar=classificar_vlm):
-    """Grava os parados do clipe e abre ou estende incidentes. Devolve os novos."""
+    """Grava os parados do clipe e abre ou estende incidentes. Devolve os novos.
+    Um incidente só abre (ou se estende) quando o MESMO veículo fica parado no mesmo
+    ponto em clipes seguidos: a comparação usa classe, tamanho e um descritor de cor,
+    não só a posição. Posição sozinha transforma a fila de um semáforo (carros diferentes
+    no mesmo lugar) em "enguiço". Muitos vizinhos parados = fila, não incidente."""
     criar_tabelas(db)
     desde = (datetime.fromisoformat(clipe_utc) - timedelta(minutes=EMENDA_MIN)).isoformat()
     novos = []
     for p in achados:
+        p["descritor"] = descritor(quadros, p)
         db.execute(
-            "INSERT INTO parados VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (camera, clipe_utc, p["classe"], p["x"], p["y"], p["segundos"], p["vizinhos"]),
+            "INSERT INTO parados (camera, clipe_utc, classe, x, y, segundos, vizinhos, h, descritor)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                camera,
+                clipe_utc,
+                p["classe"],
+                p["x"],
+                p["y"],
+                p["segundos"],
+                p["vizinhos"],
+                p["h"],
+                p["descritor"],
+            ),
         )
+        antes = [
+            {"utc": utc, "x": x, "y": y, "classe": cl, "h": h, "descritor": desc}
+            for utc, x, y, cl, h, desc in db.execute(
+                "SELECT clipe_utc, x, y, classe, h, descritor FROM parados"
+                " WHERE camera=? AND clipe_utc>=? AND clipe_utc<?",
+                (camera, desde, clipe_utc),
+            )
+            if _perto(p, {"x": x, "y": y})
+        ]
+        mesmos = [a for a in antes if _mesmo_veiculo(p, a)]
+        if not mesmos:
+            continue  # mesmo ponto, mas outro veículo: fila/semáforo, não é o mesmo evento
         aberto = next(
             (
-                (i, fim)
-                for i, x, y, fim in db.execute(
-                    "SELECT id, x, y, fim_utc FROM incidentes WHERE camera=? AND fim_utc>=?",
+                (i, fim, clipes)
+                for i, x, y, fim, clipes in db.execute(
+                    "SELECT id, x, y, fim_utc, clipes FROM incidentes WHERE camera=? AND fim_utc>=?",
                     (camera, desde),
                 )
                 if _perto(p, {"x": x, "y": y})
             ),
             None,
         )
-        if aberto:  # mesmo incidente: estende (uma vez por clipe), sem nova classificação
-            if aberto[1] < clipe_utc:
+        if aberto:  # mesmo veículo continua parado: estende (uma vez por clipe), sem reclassificar
+            if aberto[1] < clipe_utc and aberto[2] < CLIPES_MAX:
                 db.execute(
                     "UPDATE incidentes SET fim_utc=?, clipes=clipes+1 WHERE id=?",
                     (clipe_utc, aberto[0]),
                 )
             continue
-        antes = [
-            utc
-            for utc, x, y in db.execute(
-                "SELECT clipe_utc, x, y FROM parados WHERE camera=? AND clipe_utc>=?"
-                " AND clipe_utc<?",
-                (camera, desde, clipe_utc),
-            )
-            if _perto(p, {"x": x, "y": y})
-        ]
-        if not antes:
-            continue  # primeira vez parado aqui: pode ser só o semáforo
+        if p["vizinhos"] >= VIZINHOS_FILA or _recorrente(db, camera, p, clipe_utc):
+            continue  # fila, ou o mesmo ponto já foi classificado há pouco
         # O modelo de visão leva de ~14 s a ~2 min: grava antes, para não segurar a trava de
         # escrita do banco (e bloquear a publicação e qualquer outro programa) esse tempo todo.
         db.commit()
@@ -260,7 +356,7 @@ def registrar(db, camera, clipe_utc, achados, quadros, classificar=classificar_v
             " confianca, descricao, modelo) VALUES (?, ?, ?, 2, ?, ?, ?, ?, ?, ?, ?)",
             (
                 camera,
-                min(antes),
+                min(a["utc"] for a in mesmos),
                 clipe_utc,
                 p["classe"],
                 p["x"],

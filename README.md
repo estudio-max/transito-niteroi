@@ -6,7 +6,7 @@ Um projeto de **Labs.fanara.com.br** · licença [AGPL-3.0](LICENSE) · estudo c
 
 > **Dados preliminares.** A contagem automática ainda não foi conferida por amostragem e o classificador de ocorrências nunca viu um acidente real, só enguiços e veículos estacionados. Use como indicação, não como estatística oficial. Nenhum vídeo, imagem ou placa é guardado: só números e texto.
 
-Documentação do projeto: `REQUIREMENTS.md` (o que faz e as regras), `ARCHITECTURE.md` (como está construído, com os limites conhecidos) e `STEPS.md` (fases, achados e ideias a amadurecer).
+Documentação do projeto: `REQUIREMENTS.md` (o que faz e as regras), `ARCHITECTURE.md` (como está construído, com os limites conhecidos), `STEPS.md` (fases, achados e ideias a amadurecer) e `ESTUDO-2026-11-20.md` (análise externa: como funciona, os achados com evidência, os 10 insights e a lista priorizada de mudanças — a fonte do que virou a fase 2m).
 
 ## Dados abertos
 
@@ -56,7 +56,9 @@ Essa é a configuração do detector adotada em 19/11/2026 (ver `STEPS.md`, fase
 
 ## Incidentes
 
-Quando um veículo fica parado 20 s ou mais no mesmo ponto em dois clipes seguidos, o coletor manda quatro imagens (três quadros e uma ampliação do veículo) ao modelo local `qwen3-vl:4b-instruct`, que responde `acidente`, `enguico`, `estacionado`, `fila`, `bloqueio` ou `indeterminado`, com confiança e uma frase do que vê. Nada sai do notebook e as imagens não são guardadas; o banco recebe só o texto (tabelas `parados` e `incidentes` em `fluxo.db`). O painel mostra acidente, enguiço e bloqueio das últimas 24 h, só quando o incidente durou 3 clipes seguidos (cerca de 3 min), com aviso de classificação automática. Limiares no topo de `incidentes.py` e `MIN_CLIPES_PUBLICAR` em `exportar.py`. Use a variante `instruct`: a padrão `qwen3-vl:4b` "pensa" e esgota o limite de resposta sem devolver o JSON.
+Quando o **mesmo veículo** fica parado 20 s ou mais no mesmo ponto em dois clipes seguidos — reconhecido por classe, altura da caixa e um descritor de cor do recorte, não só pela posição — o coletor manda quatro imagens (três quadros e uma ampliação do veículo) ao modelo local `qwen3-vl:4b-instruct`, que responde `acidente`, `enguico`, `estacionado`, `fila`, `bloqueio` ou `indeterminado`, com confiança e uma frase do que vê. Exigir o mesmo veículo impede que a fila de um semáforo (carros diferentes no mesmo lugar) vire "enguiço". Nada sai do notebook e as imagens não são guardadas; o banco recebe só o texto (tabelas `parados` e `incidentes` em `fluxo.db`). O painel mostra acidente, enguiço e bloqueio das últimas 24 h, com início e fim, só quando o incidente durou 3 clipes seguidos (cerca de 3 min), com aviso de classificação automática. Limiares no topo de `incidentes.py` e `MIN_CLIPES_PUBLICAR` em `exportar.py`. Use a variante `instruct`: a padrão `qwen3-vl:4b` "pensa" e esgota o limite de resposta sem devolver o JSON.
+
+Para tirar do painel incidentes publicáveis antigos (marcá-los como `indeterminado`, mantendo `parados` e as descrições), rode `uv run limpar_incidentes.py` — idempotente, foi usado na limpeza de 21/11/2026.
 
 Não use `--passo 2`: o rastreador perde os veículos e a contagem desaba (medido em 12/11/2026, ver `STEPS.md`).
 
@@ -75,8 +77,10 @@ Fora das janelas ele espera sem processar nada. Sem `--janelas`, coleta o tempo 
 Depois de mudar o código do painel, compile, verifique e envie:
 
 ```bash
-cd painel && npm run build && npx astryx doctor --built dist && scp -r dist/. hostgator-fanara:transito.fanara.com.br/
+cd painel && npm run build && npx astryx doctor --built dist && scp -r dist/. hostgator-fanara:transito.fanara.com.br/ && ssh hostgator-fanara 'find ~/transito.fanara.com.br -type d -exec chmod 755 {} \; ; find ~/transito.fanara.com.br -type f -exec chmod 644 {} \;'
 ```
+
+O `chmod` no fim é obrigatório: o `scp` a partir do Windows cria diretórios com permissão que o Apache não lê (o site cai com 403). Sem ele, cada publicação do painel derruba o site.
 
 O `dist/` leva uma cópia de `dados.json`; se o coletor estiver rodando, a versão mais nova volta na próxima publicação dele (até 5 min).
 

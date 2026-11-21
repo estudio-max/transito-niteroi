@@ -44,7 +44,7 @@ flowchart LR
 | `parados` | Função pura: trecho parado mais longo de cada trajetória (âncora gulosa, tolerância relativa à altura da caixa, que compensa a perspectiva), posição de parada e número de vizinhos parados |
 | `imagens` | Escolhe 3 quadros (início, meio, fim do trecho), desenha a caixa vermelha no veículo e acrescenta uma ampliação (3×) da vizinhança dele no quadro do meio: o veículo longe da câmera tem ~35 px e sem a ampliação o modelo pequeno confundiu posto de combustível com pista |
 | `classificar_vlm` | `POST http://localhost:11434/api/chat` (Ollama) com as 3 imagens, `format` = esquema JSON (`tipo`, `confianca`, `descricao`), `temperature` 0 e `think` desligado. Resposta fora do esquema vira `indeterminado` |
-| `registrar` | Grava os parados, estende incidente aberto no mesmo ponto (uma vez por clipe) ou abre um novo se havia parado no clipe anterior. Qualquer erro da API vira incidente `indeterminado` com o erro na descrição: a contagem nunca é perdida |
+| `registrar` | Grava os parados (com `h` e `descritor` de cor HSV do recorte), e abre ou estende um incidente só quando o **mesmo veículo** — classe, altura e descritor — volta a parar no mesmo ponto (≤40 px) em clipe seguido. Posição sozinha fazia a fila de um semáforo virar "enguiço". `VIZINHOS_FILA=4` trata fila como fila; `CLIPES_MAX`/`RECORRENTE_H` limitam duração e reclassificação do mesmo ponto. Qualquer erro da API vira incidente `indeterminado` com o erro na descrição: a contagem nunca é perdida |
 | `criar_tabelas` | `parados` e `incidentes` (`CREATE IF NOT EXISTS`, chamado também pelo exportador) |
 
 O coletor chama `parados` e `registrar` depois de gravar a contagem do clipe, então falha na parte de incidentes não afeta o número já gravado.
@@ -84,7 +84,7 @@ flowchart LR
     H --> V[Visitante: a página busca dados.json a cada minuto]
 ```
 
-- `exportar.py`: `ler` (banco), `agregar` (baldes de 5 min por câmera e **por sentido**, com buracos onde não houve coleta), `cobertura` (minutos por dia e hora), `montar` (resumo por câmera e sentido, totais, tipos de veículo, dispersão, últimos 20 clipes), `exportar` (grava e, opcionalmente, envia por `scp`).
+- `exportar.py`: `ler` (banco), `agregar` (baldes de 5 min por câmera e **por sentido**, com buracos onde não houve coleta), `cobertura` (minutos por dia e hora), `montar` (resumo por câmera e sentido, totais, tipos de veículo, dispersão, últimos 20 clipes), `ler_ocorrencias` (incidentes publicáveis das últimas 24 h, deduplicados por câmera e início), `exportar` (grava e, opcionalmente, envia por `scp`). O `config` de um clipe — modelo, detector, linha e `passo` quando ≠ 1 — separa as séries do habitual e da tendência.
 - Sentidos: `CAMERAS[...]["sentido_confirmado"]` e `ROTULO_SENTIDO` em `coletor.py` são a fonte única; o painel lê os rótulos de `dados.json` e só mostra um sentido de uma câmera se ela contou ao menos 10 veículos nele (`MIN_TOTAL`).
 - `painel/`: Vite + React 19 + Astryx (`@astryxdesign/core`, tema neutro) + Recharts. Página única em `src/Painel.tsx`, a partir do modelo `dashboard` do Astryx. Sem backend: lê `dados.json` do mesmo servidor.
 - Hospedagem: pasta `~/transito.fanara.com.br` na HostGator, acesso pelo alias SSH `hostgator-fanara` (chave local; nenhuma credencial no repositório).
@@ -96,7 +96,7 @@ flowchart LR
 |---|---|---|
 | `coletor.py` | `REGIAO` | As 7 câmeras da região, com nome e eixo (Ilha da Conceição, Alameda/Fonseca, Jansen de Melo, Feliciano Sodré/Centro), na ordem do painel. Só as de `CAMERAS` são contadas |
 | `coletor.py` | `checar_cameras` | HEAD em cada câmera da `REGIAO` a cada 5 min (junto da publicação): grava código HTTP e `Last-Modified` em `estado_cameras` |
-| `exportar.py` | `situacao` | Ocupação dos últimos 15 min de cada câmera contada contra todo o histórico dela (14 dias): livre até a mediana, moderado até o percentil 85, pesado acima |
+| `exportar.py` | `situacao` | Ocupação dos últimos 15 min contra o histórico da própria câmera no mesmo tipo de dia e hora (≤ percentil 15 `livre`, ≤ 85 `moderado`, acima `pesado`). Sem base (30 clipes em 3 dias) devolve `sem_historico` com `base` (dias/clipes já reunidos contra o mínimo), para o painel mostrar "base em formação: X/3 dias" |
 | `exportar.py` | `onibus` | Ônibus por hora e intervalo médio na última hora (exige 10 min de vídeo) |
 | `exportar.py` | `cameras_no_ar` | no_ar, parada (responde com vídeo de mais de 10 min), fora (erro HTTP ou conexão), sem_verificacao (coletor parado há mais de 30 min) |
 | `exportar.py` | `periodos` | Agrupa os clipes de 14 dias em períodos contínuos (intervalo < 30 min) e, por câmera, monta a faixa de baldes de 5 min com o nível (mesmo critério de `situacao`, via `_nivel`), minutos pesados, pior momento, fluxo por sentido e ônibus por hora; `_frase_periodo` resume em português |
@@ -147,11 +147,13 @@ Tabela `clipes`, chave `(camera, clipe_utc)`:
 
 Fluxo em veículos/hora = contagem × 3600 / `duracao_s`.
 
-Tabela `parados`: um veículo parado ≥ 20 s por linha (`camera`, `clipe_utc`, `classe`, `x`, `y`, `segundos`, `vizinhos`).
+Tabela `parados`: um veículo parado ≥ 20 s por linha (`camera`, `clipe_utc`, `classe`, `x`, `y`, `segundos`, `vizinhos`, `h`, `descritor`). O `descritor` é um histograma de cor do recorte (não é imagem) que identifica o veículo entre clipes.
 
 Tabela `incidentes`: `id`, `camera`, `inicio_utc`, `fim_utc`, `clipes`, `classe`, `x`, `y`, `tipo`, `confianca`, `descricao`, `modelo`. Só texto; nenhuma imagem.
 
 Tabela `estado_cameras`: uma linha por câmera e verificação (`camera`, `verificado_utc`, `http`, `video_utc`).
+
+O banco abre em `journal_mode=WAL` com `synchronous=NORMAL` (leitor não bloqueia o escritor, desde 21/11/2026) e tem índices em `clipes.clipe_utc`, `passagens(camera, clipe_utc)`, `parados(camera, clipe_utc)`, `incidentes(camera, fim_utc)` e `estado_cameras(camera, verificado_utc)`. O clipe e as passagens dele gravam na mesma transação.
 
 ### Configuração
 

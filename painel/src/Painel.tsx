@@ -96,10 +96,12 @@ interface Dados {
   periodos?: Periodo[];
   antes_depois?: AntesDepois[];
   resumos?: Record<Janela, ResumoJanela>;
+  // RF6: veículos por direção de movimento (leste/oeste/norte/sul), últimas 24 h, por câmera
+  movimentos?: Record<string, Record<string, number>>;
 }
 
 type Janela = '7d' | '30d' | 'total';
-type Vista = 'agora' | Janela;
+type Vista = 'agora' | '24h' | Janela;
 
 // Resumo por janela (exportar.resumos).
 interface ResumoJanela {
@@ -146,6 +148,7 @@ interface Tendencia {
   direcao: 'subindo' | 'estavel' | 'descendo' | null;
 }
 const DIRECAO = {subindo: 'subindo', estavel: 'estável', descendo: 'descendo'} as const;
+const ROTULO_MOVIMENTO = {leste: 'leste', oeste: 'oeste', norte: 'norte', sul: 'sul'} as const;
 
 // Pontos críticos de sinistros (sinistros.py): PRF nas rodovias federais e o ranking
 // de vias da NitTrans, transcrito da tabela publicada em imagem.
@@ -304,6 +307,8 @@ interface Situacao {
   nivel: 'livre' | 'moderado' | 'pesado' | 'sem_historico' | 'sem_dado_recente';
   ocupacao?: number;
   percentil?: number;
+  // sem_historico traz o progresso da base (dias e clipes já reunidos contra o mínimo)
+  base?: {dias: number; clipes: number; dias_min: number; clipes_min: number};
 }
 
 interface PontoRegiao {
@@ -978,8 +983,8 @@ function Ocorrencias({
                   variant={TIPO_OCORRENCIA[o.tipo].variante}
                 />
                 <Text type="supporting" color="secondary">
-                  {o.camera} · desde {diaHora.format(new Date(o.inicio_utc))} · parado
-                  por ~{minutos(o)} min · confiança {CONFIANCA[o.confianca]}
+                  {o.camera} · {diaHora.format(new Date(o.inicio_utc))}–{hora.format(new Date(o.fim_utc))} · ~
+                  {minutos(o)} min · confiança {CONFIANCA[o.confianca]}
                 </Text>
               </HStack>
               <Text type="body">{o.descricao}</Text>
@@ -1217,10 +1222,13 @@ function MapaRegiao({
         texto = `Agora: ${NOME_NIVEL[s.nivel]}.`;
       } else if (p.contada) {
         cor = COR_MAPA.medido;
-        texto =
-          noPeriodo && ultimo
+        if (noPeriodo && ultimo) {
+          texto = noPeriodo.com_base
             ? `${tituloPeriodo(ultimo)}: ${noPeriodo.minutos_pesado ? `acima do habitual por ${noPeriodo.minutos_pesado} min` : 'sem trânsito acima do habitual'}.`
-            : 'Ponto medido; sem período recente.';
+            : `${tituloPeriodo(ultimo)}: ainda sem base para comparar com o habitual.`;
+        } else {
+          texto = 'Ponto medido; sem período recente.';
+        }
       }
       const oc = agoraOcorrencias.find(o => o.camera === p.nome);
       if (oc) {
@@ -1624,8 +1632,11 @@ function statusDoPonto(p: PontoRegiao, s?: Situacao): {dot: Dot; texto: string} 
       return {dot: 'warning', texto: 'Dentro do habitual para esta hora'};
     case 'pesado':
       return {dot: 'error', texto: 'Acima do habitual para esta hora'};
-    case 'sem_historico':
-      return {dot: 'neutral', texto: 'Medindo · ainda sem base para comparar com este dia e hora'};
+    case 'sem_historico': {
+      const b = s?.base;
+      const progresso = b ? ` · base em formação: ${b.dias}/${b.dias_min} dias, ${b.clipes}/${b.clipes_min} clipes` : '';
+      return {dot: 'neutral', texto: `Medindo · ainda sem base para comparar com este dia e hora${progresso}`};
+    }
     default:
       return {dot: 'neutral', texto: 'Sem medição agora'};
   }
@@ -1638,6 +1649,11 @@ function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
   const st = statusDoPonto(p, dados.situacao?.[p.id]);
   const bus = dados.onibus?.[p.id];
   const t = dados.tendencia?.[p.id];
+  const movs = dados.movimentos?.[p.id];
+  const i = dados.cameras.findIndex(c => c.id === p.id);
+  const serie = dados.serie
+    .map(pt => (pt[`${p.id}_desce_fluxo`] ?? 0) + (pt[`${p.id}_sobe_fluxo`] ?? 0))
+    .filter(v => v > 0);
   // 30 e 60 min só aparecem com vídeo suficiente na janela (exportar.tendencia)
   const janelas = t
     ? (
@@ -1660,6 +1676,9 @@ function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
       <Heading level={4} accessibilityLevel={3}>
         {st.texto}
       </Heading>
+      {serie.length > 1 && (
+        <Sparkline valores={serie} cor={CORES[i] ?? CORES[0]} id={`agora-${p.id}`} />
+      )}
       {t && t.m15 != null && (
         <VStack gap={0}>
           <Text type="body">
@@ -1680,6 +1699,14 @@ function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
       {bus && bus.por_hora > 0 && bus.intervalo_min != null && (
         <Text type="body" color="secondary">
           {`Ônibus na última hora: ~${numero.format(bus.por_hora)} (${intervalo(bus.intervalo_min)}), estimativa`}
+        </Text>
+      )}
+      {movs && Object.keys(movs).length > 0 && (
+        <Text type="body" color="secondary">
+          {`Por direção, 24 h: ${Object.entries(movs)
+            .sort((a, b) => b[1] - a[1])
+            .map(([m, q]) => `${ROTULO_MOVIMENTO[m as keyof typeof ROTULO_MOVIMENTO] ?? m} ${numero.format(q)}`)
+            .join(' · ')}`}
         </Text>
       )}
     </VStack>
@@ -1757,6 +1784,116 @@ function CamerasPublicas({regiao}: {regiao: PontoRegiao[]}) {
 }
 
 // ============= MAIN COMPONENT =============
+
+function Resumo24h({dados}: {dados: Dados}) {
+  if (!dados.ultimo_clipe_utc) {
+    return (
+      <EmptyState
+        title="Ainda não há dados"
+        description="Nenhum clipe foi coletado nas últimas 24 horas. O painel se atualiza sozinho quando a coleta recomeçar."
+      />
+    );
+  }
+  let picoTotal = -1;
+  let picoT = 0;
+  for (const p of dados.serie) {
+    let total = 0;
+    for (const c of dados.cameras) {
+      for (const s of SENTIDOS) {
+        total += p[`${c.id}_${s}_fluxo`] ?? 0;
+      }
+    }
+    if (total > picoTotal) {
+      picoTotal = total;
+      picoT = p.t;
+    }
+  }
+  const pico = {total: picoTotal, t: picoT};
+  return (
+    <VStack gap={6}>
+      <VStack gap={1}>
+        <Heading level={2} accessibilityLevel={1}>
+          Levantamento das últimas 24 horas
+        </Heading>
+        <Text type="body" color="secondary">
+          Totais, momento mais carregado, perfil de fluxo e tipos de veículo por câmera. Horário de Brasília.
+        </Text>
+      </VStack>
+
+      <Grid columns={{minWidth: 240, repeat: 'fit'}} gap={4}>
+        <MetricCard
+          label="Veículos contados"
+          value={numero.format(dados.total_veiculos)}
+          unidade="nas últimas 24 h"
+          apoio="Câmeras somadas; o mesmo veículo pode passar por duas câmeras"
+        />
+        <MetricCard
+          label="Minutos de vídeo"
+          value={numero.format(dados.total_clipes)}
+          unidade="nas últimas 24 h"
+          apoio="Cada clipe tem cerca de 60 segundos"
+        />
+        <MetricCard
+          label="Momento mais carregado"
+          value={pico.total > 0 ? diaHora.format(new Date(pico.t)) : '—'}
+          unidade=""
+          apoio={
+            pico.total > 0
+              ? `${numero.format(Math.round(pico.total))} veículos/h no pico de 5 minutos`
+              : 'Sem clipes suficientes para calcular'
+          }
+        />
+        <MetricCard
+          label="Ocorrências"
+          value={numero.format(dados.ocorrencias?.length ?? 0)}
+          unidade="nas últimas 24 h"
+          apoio="Acidentes, enguiços e bloqueios (classificação automática, não confirmada)"
+        />
+      </Grid>
+
+      <Grid columns={{minWidth: 420, repeat: 'fit'}} gap={4}>
+        {SENTIDOS.map(s => (
+          <ChartCard
+            key={s}
+            titulo={`Fluxo · ${rotuloMin(dados, s)}`}
+            apoio={`Veículos por hora que cruzam a linha de contagem, em médias de ${dados.balde_min} minutos. ${notaSentido(dados, s)}`}>
+            <SerieChart
+              dados={dados}
+              sentido={s}
+              unidade="veículos/h"
+              formato={numero}
+              descricao={`Gráfico de linhas do fluxo de veículos por hora ${rotuloMin(dados, s)}, por câmera, nas últimas 24 horas.`}
+            />
+          </ChartCard>
+        ))}
+        <ChartCard
+          titulo="Ocupação"
+          apoio="Média de veículos visíveis por quadro. Sobe quando há fila, mesmo que o fluxo caia.">
+          <SerieChart
+            dados={dados}
+            unidade="veículos por quadro"
+            formato={decimal}
+            descricao="Gráfico de linhas da ocupação média de cada câmera ao longo do tempo, nas últimas 24 horas."
+          />
+        </ChartCard>
+      </Grid>
+
+      <Grid columns={{minWidth: 320, repeat: 'fit'}} gap={4}>
+        {dados.resumo.map((r, i) => {
+          const total = Object.values(r.tipos).reduce((a, b) => a + b, 0);
+          return (
+            <ChartCard
+              key={r.id}
+              titulo={`Tipos de veículo · ${r.nome}`}
+              apoio={`${numero.format(total)} veículos nas últimas 24 h.`}>
+              <TiposChart resumo={r} cor={CORES[i]} />
+            </ChartCard>
+          );
+        })}
+      </Grid>
+    </VStack>
+  );
+}
 
 function Conteudo({dados}: {dados: Dados}) {
   if (!dados.ultimo_clipe_utc) {
@@ -1975,6 +2112,7 @@ export default function Painel() {
                     label="Período mostrado"
                     layout="fill">
                     <SegmentedControlItem value="agora" label="Agora" />
+                    <SegmentedControlItem value="24h" label="24 h" />
                     <SegmentedControlItem value="7d" label="7 dias" />
                     <SegmentedControlItem value="30d" label="30 dias" />
                     <SegmentedControlItem value="total" label="Tudo" />
@@ -1996,6 +2134,8 @@ export default function Painel() {
                       <CamerasPublicas regiao={dados.regiao ?? []} />
                     </Grid>
                   </>
+                ) : vista === '24h' ? (
+                  <Resumo24h dados={dados} />
                 ) : (
                   <>
                     <ResumoPeriodo janela={vista} dados={dados} />

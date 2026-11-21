@@ -444,3 +444,121 @@ def test_texto_simples_tem_o_essencial_e_escapa_html():
     assert "veículo enguiçado em Jansen x Mal. Deodoro desde 18h00" in html
     assert "Atualizado em 19/11 às 18h00" in html and "<script" not in html
     assert '<base target="_top">' in html  # o link do painel sai do iframe
+
+
+def test_texto_simples_mostra_fim_da_ocorrencia():
+    from exportar import texto_simples
+
+    dados = {
+        "gerado_utc": AGORA,
+        "veredito": {"nivel": "ok", "texto": "ok."},
+        "situacao": {},
+        "tendencia": {},
+        "ocorrencias": [
+            {
+                "tipo": "enguico",
+                "camera": "Jansen x Mal. Deodoro",
+                "inicio_utc": "2026-11-19T18:00:00+00:00",
+                "fim_utc": "2026-11-19T18:07:00+00:00",
+            }
+        ],
+    }
+    assert "desde 15h00 até 15h07" in texto_simples(dados)
+
+
+def test_resumo_curto_sem_base_nao_afirma_trânsito_habitual():
+    from exportar import _resumo_curto
+
+    sem_base = {"cameras": [{"com_base": False, "minutos_pesado": 0, "nome": "x"}]}
+    assert _resumo_curto(sem_base) == "ainda sem base para comparar com o habitual"
+    com_base = {"cameras": [{"com_base": True, "minutos_pesado": 0, "nome": "x"}]}
+    assert _resumo_curto(com_base) == "sem trânsito acima do habitual nos pontos medidos"
+
+
+def test_situacao_sem_historico_traz_progresso_da_base():
+    s = situacao(_historico(dias=2, agora_ocup=3.0), AGORA)["000018"]
+    assert s["nivel"] == "sem_historico"
+    # 2 dias de base + o clipe de agora = 3 dias, 27 clipes; ainda abaixo do mínimo (30/3)
+    assert s["base"]["dias"] == 3 and s["base"]["dias_min"] == 3
+    assert s["base"]["clipes"] == 27 and s["base"]["clipes_min"] == 30
+
+
+def test_ler_ocorrencias_deduplica_o_mesmo_evento():
+    import sqlite3
+
+    from exportar import ler_ocorrencias
+    from incidentes import criar_tabelas
+
+    db = sqlite3.connect(":memory:")
+    criar_tabelas(db)
+    for fim in ("2026-11-19T10:02:00+00:00", "2026-11-19T10:04:00+00:00"):
+        db.execute(
+            "INSERT INTO incidentes (camera, inicio_utc, fim_utc, clipes, classe, x, y,"
+            " tipo, confianca, descricao, modelo)"
+            " VALUES ('000018','2026-11-19T10:00:00+00:00',?,3,'carro',400,300,"
+            "'enguico','alta','x','m')",
+            (fim,),
+        )
+    db.commit()
+    ocorr = ler_ocorrencias(db, "2026-11-19T00:00:00+00:00")
+    assert len(ocorr) == 1 and ocorr[0]["fim_utc"] == "2026-11-19T10:04:00+00:00"
+
+
+def test_config_do_clipe_separa_passo_diferente_sem_reescrever_o_passado():
+    from collections import Counter
+
+    from coletor import abrir_banco, gravar
+    from exportar import ler
+
+    db = abrir_banco(":memory:")
+    gravar(
+        db,
+        "000018",
+        "2026-11-19T20:00:00+00:00",
+        60,
+        1.0,
+        Counter(carro_desce=3),
+        {"modelo": "m.pt", "passo": 1, "linha": "L", "detector": "{}"},
+    )
+    gravar(
+        db,
+        "000018",
+        "2026-11-19T20:01:00+00:00",
+        60,
+        1.0,
+        Counter(carro_desce=3),
+        {"modelo": "m.pt", "passo": 2, "linha": "L", "detector": "{}"},
+    )
+    antes, depois = ler(db, "2026-11-19T00:00:00+00:00")
+    assert antes["config"] == "m.pt|{}|L"  # passo 1 não muda o config antigo
+    assert depois["config"] == "m.pt|{}|L|passo=2"
+
+
+def test_movimentos_resumo_agrupa_por_camera_e_direcao():
+    from coletor import abrir_banco, gravar_movimentos
+    from exportar import movimentos_resumo
+
+    db = abrir_banco(":memory:")
+    gravar_movimentos(
+        db,
+        "000021",
+        "2026-11-21T00:00:00+00:00",
+        {"leste_carro": 5, "oeste_carro": 3, "norte_carro": 2},
+    )
+    gravar_movimentos(
+        db,
+        "000021",
+        "2026-11-21T00:01:00+00:00",
+        {"leste_carro": 4, "sul_moto": 1},
+    )
+    r = movimentos_resumo(db, "2026-11-20T00:00:00+00:00")
+    assert r["000021"] == {"leste": 9, "oeste": 3, "norte": 2, "sul": 1}
+
+
+def test_movimentos_resumo_vazio_sem_tabela():
+    import sqlite3
+
+    from exportar import movimentos_resumo
+
+    db = sqlite3.connect(":memory:")
+    assert movimentos_resumo(db, "2026-11-20T00:00:00+00:00") == {}

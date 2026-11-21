@@ -24,9 +24,9 @@ Medir o fluxo real de veículos na Av. Jansen de Melo (saída da Ponte Rio–Nit
 | RF13 | Coleta restrita a janelas de horário em dias úteis (`--janelas`, `--fim-de-semana`) | alta | implementado |
 | RF14 | Mapa de cobertura (dias × horas, últimos 14 dias) no painel | alta | implementado |
 | RF15 | Detectar veículo parado na imagem por 20 s ou mais dentro do clipe (`incidentes.parados`) | alta | implementado (18/11/2026) |
-| RF16 | Abrir incidente quando o mesmo ponto tem veículo parado em dois clipes seguidos (até 5 min) e estendê-lo enquanto continuar parado, sem nova classificação | alta | implementado (18/11/2026) |
-| RF17 | Classificar o incidente com um modelo de visão local (Ollama, `qwen3-vl:4b-instruct`) a partir de 4 imagens (3 quadros e uma ampliação do veículo): acidente, enguiço, estacionado, fila, bloqueio ou indeterminado, com confiança e descrição curta | alta | implementado e testado em clipe real (19/11/2026); precisão ainda não medida |
-| RF18 | Painel mostra acidentes, enguiços e bloqueios das últimas 24 h que duraram 3 clipes seguidos ou mais, com aviso de classificação automática não confirmada | alta | implementado e **publicado** em 19/11/2026 |
+| RF16 | Abrir incidente quando o **mesmo veículo** (classe, altura da caixa e descritor de cor) fica parado em dois clipes seguidos (até 5 min) e estendê-lo enquanto continuar parado, sem nova classificação | alta | implementado (18/11/2026); gate de identidade em 21/11/2026 (fase 2m) |
+| RF17 | Classificar o incidente com um modelo de visão local (Ollama, `qwen3-vl:4b-instruct`) a partir de 4 imagens (3 quadros e uma ampliação do veículo): acidente, enguiço, estacionado, fila, bloqueio ou indeterminado, com confiança e descrição curta | alta | implementado e testado em clipe real (19/11/2026); precisão ainda não medida; `VIZINHOS_FILA` e `RECORRENTE_H` evitam classificar fila e o mesmo ponto (21/11/2026) |
+| RF18 | Painel mostra acidentes, enguiços e bloqueios das últimas 24 h que duraram 3 clipes seguidos ou mais, com aviso de classificação automática não confirmada, início e fim | alta | implementado e publicado (19/11/2026); dedupe por evento e exibição de duração em 21/11/2026 |
 | RF19 | Primeira tela legível por leigo (o prefeito, a população): frase de veredito do momento, situação de cada ponto em texto e cor, ocorrências e câmeras no ar; gráficos técnicos recolhidos | alta | implementado e publicado (19/11/2026) |
 | RF20 | Situação de cada ponto contado (livre, moderado, pesado) comparando a ocupação dos últimos 15 min com todo o histórico da própria câmera (14 dias); sem 30 clipes de histórico, diz que ainda não há base | alta | implementado (19/11/2026) |
 | RF21 | Ônibus por hora e intervalo médio entre ônibus na última hora, por câmera contada | alta | implementado (19/11/2026), contagem de ônibus não validada |
@@ -68,7 +68,7 @@ O projeto é um estudo cívico que pode virar acadêmico e, depois, produto. Nen
 
 ## Regras de negócio
 
-- **Incidente:** veículo parado (pé da caixa a menos de 0,3 altura da caixa do ponto de parada) por 20 s ou mais no clipe, no mesmo ponto (até 40 px) de um parado do clipe anterior da mesma câmera (até 5 min antes). Começa no primeiro clipe em que o veículo apareceu parado. Parado num clipe só não abre incidente: costuma ser semáforo.
+- **Incidente:** veículo parado (pé da caixa a menos de 0,3 altura da caixa do ponto de parada) por 20 s ou mais no clipe, que é o **mesmo veículo** — classe, altura da caixa e descritor de cor parecidos — de um parado do clipe anterior da mesma câmera (até 40 px e 5 min antes). Carros diferentes no mesmo ponto (fila de semáforo) não abrem incidente; com 4 ou mais vizinhos parados, também é fila. Começa no primeiro clipe em que o veículo apareceu parado. Parado num clipe só não abre incidente: costuma ser semáforo.
 - **Classificação:** feita uma vez, quando o incidente abre. Tipos `acidente`, `enguico`, `estacionado`, `fila`, `bloqueio`, `indeterminado`; o modelo é instruído a preferir `indeterminado` a adivinhar. Só `acidente`, `enguico` e `bloqueio` vão para o painel (`PUBLICAVEIS`).
 
 - Um veículo (uma trajetória rastreada) conta no máximo uma vez por clipe.

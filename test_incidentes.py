@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 from exportar import ler_ocorrencias, montar
-from incidentes import imagens, parados, registrar
+from incidentes import VIZINHOS_FILA, imagens, parados, registrar
 
 FPS = 10
 
@@ -181,3 +181,49 @@ def test_painel_recebe_so_ocorrencias_publicaveis():
     assert [o["tipo"] for o in ocorr] == ["enguico"]
     dados = montar([], "2026-11-18T10:05:00+00:00", (), ocorr)
     assert dados["ocorrencias"][0]["camera"] == "Jansen x Mal. Deodoro"
+
+
+def _quadros(cor_bgr):
+    """Quadros sintéticos com um "veículo" colorido na caixa de P (x=400, y=300, 60×40)."""
+    img = np.zeros((450, 800, 3), np.uint8)
+    img[260:300, 370:430] = cor_bgr
+    jpg = cv2.imencode(".jpg", img)[1].tobytes()
+    return {q: jpg for q in range(0, 300, 10)}
+
+
+def test_mesmo_ponto_mas_outro_veiculo_nao_vira_incidente():
+    """Fila de semáforo: carros diferentes (cores diferentes) no mesmo ponto não abrem
+    incidente. Só a posição emendava o "enguiço"; o descritor de cor corta isso."""
+    db, chamadas = _db(), []
+    cls = _classificador(chamadas)
+    azul = _quadros((200, 0, 0))
+    verde = _quadros((0, 200, 0))
+    vermelho = _quadros((0, 0, 200))
+    registrar(db, "000018", "2026-11-18T10:00:00+00:00", [P], azul, cls)
+    assert registrar(db, "000018", "2026-11-18T10:01:00+00:00", [P], verde, cls) == []
+    assert registrar(db, "000018", "2026-11-18T10:02:00+00:00", [P], vermelho, cls) == []
+    assert chamadas == []
+    assert db.execute("SELECT COUNT(*) FROM incidentes").fetchone()[0] == 0
+
+
+def test_mesmo_veiculo_no_mesmo_ponto_abre_e_estende():
+    db, chamadas = _db(), []
+    cls = _classificador(chamadas)
+    vermelho = _quadros((0, 0, 200))
+    registrar(db, "000018", "2026-11-18T10:00:00+00:00", [P], vermelho, cls)
+    (novo,) = registrar(db, "000018", "2026-11-18T10:01:00+00:00", [P], vermelho, cls)
+    assert novo["tipo"] == "enguico" and chamadas == [4]
+    assert registrar(db, "000018", "2026-11-18T10:02:00+00:00", [P], vermelho, cls) == []
+    assert chamadas == [4]  # estende sem reclassificar
+    assert db.execute("SELECT clipes FROM incidentes").fetchone()[0] == 3
+
+
+def test_muitos_parados_juntos_e_fila_nao_abre_incidente():
+    db, chamadas = _db(), []
+    cls = _classificador(chamadas)
+    q = _quadros((0, 0, 200))
+    engarrafado = {**P, "vizinhos": VIZINHOS_FILA}
+    registrar(db, "000018", "2026-11-18T10:00:00+00:00", [engarrafado], q, cls)
+    registrar(db, "000018", "2026-11-18T10:01:00+00:00", [engarrafado], q, cls)
+    assert chamadas == []
+    assert db.execute("SELECT COUNT(*) FROM incidentes").fetchone()[0] == 0

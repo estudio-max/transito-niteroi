@@ -70,7 +70,8 @@ def test_montar_resume_a_ultima_hora_coletada():
     assert (r18["clipes"], r18["ocupacao"]) == (0, None)
     assert r18["por_sentido"]["desce"] == {"fluxo_h": None, "total": 0}
     assert dados["sentidos"]["desce"] == "da ponte para Icaraí"
-    assert [c["sentido_confirmado"] for c in dados["cameras"]] == [False, True]
+    confirmado = {c["id"]: c["sentido_confirmado"] for c in dados["cameras"]}
+    assert (confirmado["000026"], confirmado["000018"]) == (False, True)
     assert dados["validado"] is False
     assert dados["ultimos"][0]["utc"] == "2026-11-13T00:30:00+00:00"
     assert (dados["total_veiculos"], dados["total_clipes"]) == (159, 3)
@@ -113,7 +114,8 @@ def test_exportar_le_o_banco_e_grava_json(tmp_path):
     assert exportar(banco, saida) == 1
     dados = json.loads(saida.read_text(encoding="utf-8"))
     assert dados["ultimos"][0]["fluxo_h"] == 1200
-    assert dados["resumo"][0]["tipos"] == {"carro": 18, "moto": 2, "onibus": 0, "caminhao": 0}
+    r26 = next(r for r in dados["resumo"] if r["id"] == "000026")
+    assert r26["tipos"] == {"carro": 18, "moto": 2, "onibus": 0, "caminhao": 0}
 
 
 def test_exportar_roda_como_script(tmp_path):

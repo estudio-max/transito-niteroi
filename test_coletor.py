@@ -197,3 +197,63 @@ def test_enquadramentos_guardados_cobrem_as_duas_vistas_da_000026():
     refs = _referencias()["000026"]
     assert set(refs) == set(CAMERAS["000026"]["enquadramentos"]) == {"A", "B"}
     assert all(len(v) >= 4 and len(v[0]) == 1152 for v in refs.values())
+
+
+def test_abrir_banco_cria_indices_de_consulta():
+    db = abrir_banco(":memory:")
+    clipes = {r[1] for r in db.execute("PRAGMA index_list(clipes)")}
+    passagens = {r[1] for r in db.execute("PRAGMA index_list(passagens)")}
+    assert "ix_clipes_utc" in clipes and "ix_passagens_clipe" in passagens
+
+
+def test_gravar_sem_commit_abre_transacao_e_pode_reverter():
+    from collections import Counter
+
+    db = abrir_banco(":memory:")
+    gravar(db, "000018", "t", 60, 1.0, Counter(carro_desce=5), commit=False)
+    assert db.in_transaction  # nada commitado ainda: clipe e passagens saem na mesma transação
+    db.rollback()
+    assert not ja_processado(db, "000018", "t")
+
+
+def test_cameras_contadas_estao_na_regiao_e_linhas_plausiveis():
+    from coletor import CAMERAS, REGIAO
+
+    ids = {c["id"] for c in REGIAO}
+    assert set(CAMERAS) <= ids  # toda câmera contada existe na região monitorada
+    for cfg in CAMERAS.values():
+        linhas = list(cfg.get("enquadramentos", {}).values()) + [cfg["linha"]]
+        for a, b in linhas:
+            assert 0 <= a[0] <= 1280 and 0 <= a[1] <= 720  # cabe em qualquer resolução usada
+            assert 0 <= b[0] <= 1280 and 0 <= b[1] <= 720
+            assert a != b
+
+
+def test_classificar_movimento_por_direcao():
+    from coletor import classificar_movimento
+
+    assert classificar_movimento(100, 0) == "leste"
+    assert classificar_movimento(-100, 0) == "oeste"
+    assert classificar_movimento(0, 100) == "sul"
+    assert classificar_movimento(0, -100) == "norte"
+    assert classificar_movimento(80, -60) == "leste"  # o eixo dominante decide
+    assert classificar_movimento(10, 5) is None  # parado: abaixo do deslocamento mínimo
+
+
+def test_movimentos_conta_cada_trajetoria_por_direcao():
+    from coletor import movimentos
+
+    traj = {
+        1: ("carro", [(0, 400), (200, 400)]),  # leste
+        2: ("carro", [(400, 200), (400, 400)]),  # sul
+        3: ("moto", [(300, 200), (300, 100)]),  # norte
+        4: ("onibus", [(200, 300), (0, 300)]),  # oeste
+        5: ("carro", [(300, 300), (305, 300)]),  # parado: ignorado
+        6: ("carro", [(0, 0)]),  # um ponto só: ignorado
+    }
+    assert movimentos(traj) == {
+        "leste_carro": 1,
+        "sul_carro": 1,
+        "norte_moto": 1,
+        "oeste_onibus": 1,
+    }

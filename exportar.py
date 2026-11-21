@@ -49,6 +49,8 @@ def ler(db, desde_utc):
         # config = detector e linha de contagem: o habitual e a tendência só comparam clipes
         # medidos do mesmo jeito (trocar qualquer um dos dois muda a contagem)
         " COALESCE(modelo, '') || '|' || COALESCE(detector, '') || '|' || COALESCE(linha, '')"
+        # passo ≠ 1 muda o rastreamento e a contagem: entra no config, sem reescrever o passado
+        " || CASE WHEN COALESCE(passo, '') IN ('', '1') THEN '' ELSE '|passo=' || passo END"
         f" AS config, {somas}, {tipos}"
         " FROM clipes"
         " WHERE clipe_utc >= ? ORDER BY clipe_utc",
@@ -119,17 +121,28 @@ def cobertura(instantes_utc, agora_utc, dias=COBERTURA_DIAS, cameras=N_CAMERAS):
 
 def ler_ocorrencias(db, desde_utc, limite=20):
     """Incidentes publicáveis (acidente, enguiço, bloqueio) ativos desde desde_utc que
-    duraram ao menos MIN_CLIPES_PUBLICAR clipes: parada curta é mais provavelmente erro."""
+    duraram ao menos MIN_CLIPES_PUBLICAR clipes: parada curta é mais provavelmente erro.
+    Deduplica por (câmera, início): o mesmo evento não pode virar duas ocorrências."""
     incidentes.criar_tabelas(db)
     cur = db.execute(
         "SELECT camera, inicio_utc, fim_utc, clipes, classe, tipo, confianca, descricao"
         f" FROM incidentes WHERE fim_utc >= ? AND clipes >= ?"
         f" AND tipo IN ({', '.join('?' * len(PUBLICAVEIS))})"
-        " ORDER BY inicio_utc DESC LIMIT ?",
-        (desde_utc, MIN_CLIPES_PUBLICAR, *PUBLICAVEIS, limite),
+        " ORDER BY inicio_utc DESC, fim_utc DESC",
+        (desde_utc, MIN_CLIPES_PUBLICAR, *PUBLICAVEIS),
     )
     nomes = [d[0] for d in cur.description]
-    return [dict(zip(nomes, linha, strict=True)) for linha in cur]
+    saida, vistos = [], set()
+    for linha in cur:
+        o = dict(zip(nomes, linha, strict=True))
+        chave = (o["camera"], o["inicio_utc"])
+        if chave in vistos:
+            continue  # mesmo evento com mais de uma linha (ex.: reaberto por engano)
+        vistos.add(chave)
+        saida.append(o)
+        if len(saida) >= limite:
+            break
+    return saida
 
 
 def _dt(utc):
@@ -159,11 +172,20 @@ def situacao(historico, agora_utc):
             saida[camera] = {"nivel": "sem_dado_recente"}
             continue
         ocup = _ocupacao(recentes)
-        nivel, pct = _nivel_habitual(
+        nivel, pct, dias, clipes = _nivel_habitual(
             ocup, base[camera], _chave(max(c["clipe_utc"] for c in recentes))
         )  # hora da medição, não do relógio
         if nivel is None:
-            saida[camera] = {"nivel": "sem_historico", "ocupacao": ocup}
+            saida[camera] = {
+                "nivel": "sem_historico",
+                "ocupacao": ocup,
+                "base": {
+                    "dias": dias,
+                    "clipes": clipes,
+                    "dias_min": MIN_DIAS_BASE,
+                    "clipes_min": MIN_BASE_HORA,
+                },
+            }
             continue
         saida[camera] = {"nivel": nivel, "ocupacao": ocup, "percentil": pct}
     return saida
@@ -198,11 +220,13 @@ def montar_base(historico):
 
 
 def _nivel_habitual(ocup, base_camera, chave):
-    """(nível, percentil) frente ao habitual daquele dia e hora; (None, None) sem base."""
+    """(nível, percentil, dias, clipes) frente ao habitual daquele dia e hora;
+    (None, None, dias, clipes) sem base, para o painel mostrar o progresso da base."""
     b = base_camera.get(chave)
     if not b or len(b["oc"]) < MIN_BASE_HORA or len(b["dias"]) < MIN_DIAS_BASE:
-        return None, None
-    return _nivel(ocup, b["oc"])
+        return None, None, len(b["dias"]) if b else 0, len(b["oc"]) if b else 0
+    nivel, pct = _nivel(ocup, b["oc"])
+    return nivel, pct, len(b["dias"]), len(b["oc"])
 
 
 def _nivel(ocup, ocupacoes):
@@ -483,6 +507,14 @@ def texto_simples(dados):
             else ""
         )
         linhas.append(f"{nomes.get(cam, cam)}: {nivel.get(s['nivel'], s['nivel'])}.{mov}")
+    movs = dados.get("movimentos", {})
+    if movs:
+        rotulo = {"leste": "leste", "oeste": "oeste", "norte": "norte", "sul": "sul"}
+        for cam, d in movs.items():
+            partes = ", ".join(
+                f"{rotulo.get(m, m)} {q}" for m, q in sorted(d.items(), key=lambda x: -x[1])
+            )
+            linhas.append(f"{nomes.get(cam, cam)} — por direção: {partes}.")
     oc = dados.get("ocorrencias", [])
     linhas.append(
         "Ocorrências nas últimas 24 h: "
@@ -490,6 +522,7 @@ def texto_simples(dados):
             "; ".join(
                 f"{TIPO_TEXTO.get(o['tipo'], o['tipo']).lower()} em {o['camera']} desde "
                 f"{_hora_local(o['inicio_utc'])}"
+                + (f" até {_hora_local(o['fim_utc'])}" if o.get("fim_utc") else "")
                 for o in oc
             )
             if oc
@@ -563,6 +596,23 @@ def cameras_no_ar(estados, agora_utc):
                 "contada": cam["id"] in CAMERAS,
             }
         )
+    return saida
+
+
+def movimentos_resumo(db, desde_utc):
+    """Veículos por direção de movimento (RF6) por câmera, nas últimas 24 h.
+    {} se a tabela `movimentos` ainda não existir (coletor antigo)."""
+    try:
+        linhas = db.execute(
+            "SELECT camera, movimento, SUM(quantidade) FROM movimentos"
+            " WHERE clipe_utc >= ? GROUP BY camera, movimento ORDER BY camera, movimento",
+            (desde_utc,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    saida = {}
+    for cam, mov, q in linhas:
+        saida.setdefault(cam, {})[mov] = q
     return saida
 
 
@@ -751,6 +801,7 @@ def exportar(banco="fluxo.db", saida=SAIDA, enviar=None):
         {**r, "nome": nomes.get(r["camera"], r["camera"])}
         for r in antes_depois.avaliar(db, agora.astimezone(FUSO).date())
     ]
+    dados["movimentos"] = movimentos_resumo(db, desde_janela)
     db.close()
     saida.write_text(json.dumps(dados, ensure_ascii=False), encoding="utf-8")
     arquivo_feed = saida.with_name("feed.xml")
@@ -786,7 +837,9 @@ LIMITE_TITULO = 240  # cabe num post de rede social com o link
 def _resumo_curto(periodo):
     pesadas = [c for c in periodo["cameras"] if c["com_base"] and c["minutos_pesado"]]
     if not pesadas:
-        return "sem trânsito acima do habitual nos pontos medidos"
+        if any(c["com_base"] for c in periodo["cameras"]):
+            return "sem trânsito acima do habitual nos pontos medidos"
+        return "ainda sem base para comparar com o habitual"
     pior = max(pesadas, key=lambda c: c["minutos_pesado"])
     texto = (
         f"trânsito acima do habitual na {pior['nome']} por {pior['minutos_pesado']} min"
