@@ -370,7 +370,7 @@ def amostrar(args):
     linhas = ler_manual()
     for rodada in range(args.clipes):
         inicio = time.monotonic()
-        for camera in (c for c, cfg in CAMERAS.items() if "fonte" not in cfg):
+        for camera in args.cameras or (c for c, cfg in CAMERAS.items() if "fonte" not in cfg):
             try:
                 resp, utc = abrir_clipe(camera)
                 nome = f"{camera}_{utc[:19].replace('-', '').replace(':', '')}"
@@ -756,6 +756,7 @@ def main():
     a = sub.add_parser("amostrar", help="guarda clipes para contagem manual")
     a.add_argument("--condicao", required=True, help="ex.: dia, noite, pico-tarde, chuva")
     a.add_argument("--clipes", type=int, default=1, help="clipes seguidos por câmera")
+    a.add_argument("--cameras", nargs="+", help="padrão: todas as câmeras contadas")
     a.set_defaults(func=amostrar)
     m = sub.add_parser("contar", help="contador manual por teclado")
     m.set_defaults(func=contar_manual)
