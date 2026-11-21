@@ -1,4 +1,4 @@
-import {Suspense, lazy, useEffect, useState} from 'react';
+import {Suspense, lazy, useEffect, useRef, useState} from 'react';
 import type {ReactNode} from 'react';
 import {VStack, HStack, Layout, LayoutContent} from '@astryxdesign/core/Layout';
 import {Text, Heading} from '@astryxdesign/core/Text';
@@ -39,7 +39,7 @@ import {ChartCard} from './ChartCard';
 import type {Leitura} from './ChartCard';
 import {SEM_FILTRO, descricaoFiltro, trechosFiltrados, useSinistros, vitimasTexto} from './sinistros';
 import type {Sinistros} from './sinistros';
-import type {FocoMapa} from './Mapa';
+import type {EtiquetaMapa, FocoMapa, MomentoMapa} from './Mapa';
 import {Contador, Radar, Veiculo} from './Vivo';
 import {useMovimentoReduzido} from './useVivo';
 import {useMediaQuery} from '@astryxdesign/core/hooks';
@@ -1301,6 +1301,59 @@ function MapaRegiao({
   const aoVivo = dados.veredito?.nivel !== 'pausado';
   const ultimo = dados.periodos?.[0];
   const agoraOcorrencias = (dados.ocorrencias ?? []).filter(o => emAndamento(o, dados));
+  // Etiquetas ao vivo: veículos por hora nos últimos 15 min, nos dois sentidos, e a tendência.
+  const etiquetas: Record<string, EtiquetaMapa> = {};
+  if (aoVivo) {
+    for (const [id, t] of Object.entries(dados.tendencia ?? {})) {
+      if (t.m15 != null) {
+        etiquetas[id] = {valor: t.m15, tendencia: t.direcao};
+      }
+    }
+  }
+  // Replay das últimas 24 h: um quadro por balde de 5 min, ~75 ms cada (~20 s no total).
+  const contadas = (dados.regiao ?? []).filter(p => p.contada).map(p => p.id);
+  const fluxoEm = (pt: Ponto, id: string) => {
+    const d = pt[`${id}_desce_fluxo`];
+    const s = pt[`${id}_sobe_fluxo`];
+    return d == null && s == null ? null : (d ?? 0) + (s ?? 0);
+  };
+  const maximos = Object.fromEntries(
+    contadas.map(id => [id, Math.max(1, ...dados.serie.map(pt => fluxoEm(pt, id) ?? 0))]),
+  );
+  const [quadro, setQuadro] = useState<number | null>(null);
+  const relogio = useRef<number | null>(null);
+  const parar = () => {
+    if (relogio.current != null) {
+      clearInterval(relogio.current);
+      relogio.current = null;
+    }
+    setQuadro(null);
+  };
+  const reprisar = () => {
+    parar();
+    setQuadro(0);
+    relogio.current = window.setInterval(() => {
+      setQuadro(q => {
+        if (q == null || q + 1 >= dados.serie.length) {
+          if (relogio.current != null) {
+            clearInterval(relogio.current);
+            relogio.current = null;
+          }
+          return null;
+        }
+        return q + 1;
+      });
+    }, 75);
+  };
+  useEffect(() => () => {
+    if (relogio.current != null) {
+      clearInterval(relogio.current);
+    }
+  }, []);
+  const instante = quadro != null ? dados.serie[quadro] : null;
+  const momento: MomentoMapa | null = instante
+    ? {valores: Object.fromEntries(contadas.map(id => [id, fluxoEm(instante, id)])), maximos}
+    : null;
   const pontos = (dados.regiao ?? [])
     .filter(p => p.lat != null && p.lon != null)
     .map(p => {
@@ -1354,11 +1407,27 @@ function MapaRegiao({
           mapa) e, com ranking e filtros, na página <Link href="sinistros/">Sinistros</Link>.
         </Text>
       </VStack>
+      {dados.serie.length > 12 && (
+        <HStack gap={3} vAlign="center" wrap="wrap">
+          {instante ? (
+            <Button label="Parar a reprise" variant="secondary" size="sm" onClick={parar} />
+          ) : (
+            <Button label="▶ Rever as últimas 24 horas" variant="primary" size="sm" onClick={reprisar} />
+          )}
+          <Text type="body" color="secondary">
+            {instante
+              ? `Reprise: ${diaHora.format(new Date(instante.t))}. O tamanho e o brilho de cada ponto mostram quantos veículos passavam naquela hora.`
+              : 'Passe o dia em 20 segundos: veja quando cada ponto enche e esvazia.'}
+          </Text>
+        </HStack>
+      )}
       <Suspense fallback={<Spinner label="Carregando o mapa" />}>
         <Mapa
           id={ID_MAPA}
           foco={foco}
           pontos={pontos}
+          etiquetas={etiquetas}
+          momento={momento}
           sinistrosLigados={false}
           areas={(sinistros ? trechosFiltrados(sinistros, SEM_FILTRO) : [])
             .filter(t => t.lat != null && t.lon != null)
