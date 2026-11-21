@@ -8,7 +8,7 @@ import Sobre from './Sobre.tsx';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Theme theme={tema} mode="light">
+    <Theme theme={tema} mode="dark">
       <Sobre />
     </Theme>
   </StrictMode>,

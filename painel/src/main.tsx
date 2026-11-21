@@ -8,7 +8,7 @@ import Painel from './Painel.tsx';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Theme theme={tema} mode="light">
+    <Theme theme={tema} mode="dark">
       <Painel />
     </Theme>
   </StrictMode>,

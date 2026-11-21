@@ -37,6 +37,10 @@ import {Link} from '@astryxdesign/core/Link';
 import {Button} from '@astryxdesign/core/Button';
 import {Topo} from './Topo';
 import type {FocoMapa} from './Mapa';
+import {Contador, Radar, Veiculo} from './Vivo';
+import {useMovimentoReduzido} from './useVivo';
+import {useMediaQuery} from '@astryxdesign/core/hooks';
+import type {TipoVeiculo} from './Vivo';
 
 // ============= DATA =============
 
@@ -364,10 +368,19 @@ const porcento = new Intl.NumberFormat('pt-BR', {style: 'percent', maximumFracti
 // Cor segue a câmera (ordem fixa da lista) em todos os gráficos, nunca a posição.
 // Par validado nos fundos claro e escuro (o laranja do tema reprova no escuro).
 // Com mais de duas câmeras: um gráfico pequeno por câmera, não mais cores.
-const CORES = [
-  'var(--color-data-categorical-blue, #0171E3)',
-  'var(--color-data-categorical-brown, #965E03)',
-];
+// Cor segue a câmera (pelo id), nunca a posição numa lista. Paleta validada no fundo escuro
+// com o validador do guia de visualização (todos os pares: daltonismo e visão normal):
+// azul, laranja e água. Quatro cores juntas não passam; as duas câmeras da Alameda dividem
+// a água e se distinguem pelo traço (a 000021 tracejada) e pelo nome na legenda.
+const AZUL = '#3987e5';
+const COR_CAMERA: Record<string, string> = {
+  '000026': AZUL,
+  '000018': '#d95926',
+  '000019': '#199e70',
+  '000021': '#199e70',
+};
+const TRACO_CAMERA: Record<string, string | undefined> = {'000021': '5 4'};
+const cor = (id: string) => COR_CAMERA[id] ?? AZUL;
 const FORMAS = ['circle', 'triangle'] as const;
 const TINTA = 'var(--color-text-secondary, #4E606F)';
 const GRADE = 'var(--color-border, rgba(5, 54, 89, 0.1))';
@@ -426,10 +439,16 @@ function useDados() {
 
 // ============= CHART COMPONENTS =============
 
-function ChartLegendItem({color, label}: {color: string; label: string}) {
+function ChartLegendItem({color, label, traco}: {color: string; label: string; traco?: string}) {
   return (
     <HStack gap={2} vAlign="center">
-      <Icon icon={StopIcon} size="xsm" style={{color}} />
+      {traco === undefined ? (
+        <Icon icon={StopIcon} size="xsm" style={{color}} />
+      ) : (
+        <svg width="22" height="10" aria-hidden="true">
+          <line x1={1} y1={5} x2={21} y2={5} stroke={color} strokeWidth={3} strokeDasharray={traco || undefined} />
+        </svg>
+      )}
       <Text type="supporting" color="secondary">
         {label}
       </Text>
@@ -437,11 +456,16 @@ function ChartLegendItem({color, label}: {color: string; label: string}) {
   );
 }
 
-function Legenda({cameras, cores = CORES}: {cameras: Camera[]; cores?: string[]}) {
+function Legenda({cameras, linhas = false}: {cameras: Camera[]; linhas?: boolean}) {
   return (
     <HStack gap={6} vAlign="center" wrap="wrap">
-      {cameras.map((c, i) => (
-        <ChartLegendItem key={c.id} color={cores[i]} label={c.nome} />
+      {cameras.map(c => (
+        <ChartLegendItem
+          key={c.id}
+          color={cor(c.id)}
+          label={c.nome}
+          traco={linhas ? (TRACO_CAMERA[c.id] ?? '') : undefined}
+        />
       ))}
     </HStack>
   );
@@ -555,7 +579,7 @@ function SerieChart({
             content={<SerieTooltip unidade={unidade} formato={formato} />}
             cursor={{stroke: GRADE}}
           />
-          {cams.map(({c, i}) => {
+          {cams.map(({c}) => {
             const chave = chaveDe(c.id);
             const ultimo = ultimoIndice(chave);
             return (
@@ -564,9 +588,10 @@ function SerieChart({
                 type="monotone"
                 dataKey={chave}
                 name={c.nome}
-                stroke={CORES[i]}
+                stroke={cor(c.id)}
                 strokeWidth={2}
-                dot={{r: 2.5, strokeWidth: 0, fill: CORES[i]}}
+                strokeDasharray={TRACO_CAMERA[c.id]}
+                dot={{r: 2.5, strokeWidth: 0, fill: cor(c.id)}}
                 activeDot={{r: 5}}
                 connectNulls={false}
                 animationDuration={600}
@@ -588,7 +613,7 @@ function SerieChart({
           })}
         </LineChart>
       </ResponsiveContainer>
-      <Legenda cameras={cams.map(({c}) => c)} cores={cams.map(({i}) => CORES[i])} />
+      <Legenda cameras={cams.map(({c}) => c)} linhas />
     </VStack>
   );
 }
@@ -665,7 +690,7 @@ function DispersaoChart({dados}: {dados: Dados}) {
                 <Dica
                   titulo={dados.cameras[i]?.nome ?? p.c}
                   linhas={[
-                    {cor: CORES[i], texto: `${numero.format(p.f)} veículos/h`},
+                    {cor: cor(p.c), texto: `${numero.format(p.f)} veículos/h`},
                     {texto: `${decimal.format(p.o)} veículos por quadro`},
                   ]}
                 />
@@ -677,7 +702,7 @@ function DispersaoChart({dados}: {dados: Dados}) {
               key={c.id}
               name={c.nome}
               data={dados.dispersao.filter(p => p.c === c.id && p.f != null)}
-              fill={CORES[i]}
+              fill={cor(c.id)}
               fillOpacity={0.75}
               shape={FORMAS[i]}
               animationDuration={600}
@@ -758,7 +783,7 @@ function CoberturaMapa({cobertura}: {cobertura: NonNullable<Dados['cobertura']>}
   const {dias, minutos} = cobertura;
   const largura = ROTULO_DIA + 24 * CELULA;
   const altura = TOPO_MAPA + dias.length * CELULA;
-  const azul = CORES[0];
+  const azul = AZUL;
   const horasBoas = minutos.flat().filter(m => m >= 30).length;
   const diasComDado = minutos.filter(l => l.some(m => m > 0)).length;
   return (
@@ -852,7 +877,7 @@ function MetricCard({
   children,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   unidade: string;
   apoio: string;
   children?: ReactNode;
@@ -1234,7 +1259,7 @@ function MapaRegiao({
       if (oc) {
         texto += ` Ocorrência agora: ${TIPO_OCORRENCIA[oc.tipo].rotulo.toLowerCase()} desde ${hora.format(new Date(oc.inicio_utc))} (classificação automática).`;
       }
-      return {id: p.id, nome: p.nome, lat: p.lat!, lon: p.lon!, cor, texto, alerta: !!oc};
+      return {id: p.id, nome: p.nome, lat: p.lat!, lon: p.lon!, cor, texto, alerta: !!oc, pulso: p.contada && aoVivo};
     });
   if (!pontos.length) {
     return null;
@@ -1646,11 +1671,12 @@ const intervalo = (min: number) =>
   min < 1 ? `um a cada ${Math.round(min * 60)} s` : `um a cada ${decimal.format(min)} min`;
 
 function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
+  const reduzir = useMovimentoReduzido();
+  const aoVivo = dados.veredito?.nivel !== 'pausado';
   const st = statusDoPonto(p, dados.situacao?.[p.id]);
   const bus = dados.onibus?.[p.id];
   const t = dados.tendencia?.[p.id];
   const movs = dados.movimentos?.[p.id];
-  const i = dados.cameras.findIndex(c => c.id === p.id);
   const serie = dados.serie
     .map(pt => (pt[`${p.id}_desce_fluxo`] ?? 0) + (pt[`${p.id}_sobe_fluxo`] ?? 0))
     .filter(v => v > 0);
@@ -1677,12 +1703,13 @@ function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
         {st.texto}
       </Heading>
       {serie.length > 1 && (
-        <Sparkline valores={serie} cor={CORES[i] ?? CORES[0]} id={`agora-${p.id}`} />
+        <Sparkline valores={serie} cor={cor(p.id)} id={`agora-${p.id}`} />
       )}
       {t && t.m15 != null && (
         <VStack gap={0}>
           <Text type="body">
-            {`Movimento: ${numero.format(t.m15)} veículos/h nos últimos 15 min${t.direcao ? `, ${DIRECAO[t.direcao]}` : ''}`}
+            Movimento: <Contador valor={t.m15} /> veículos/h nos últimos 15 min
+            {t.direcao ? `, ${DIRECAO[t.direcao]}` : ''}
           </Text>
           {janelas.length > 0 && (
             <Text type="body" color="secondary">
@@ -1690,9 +1717,19 @@ function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
             </Text>
           )}
           {t.tipos && (
-            <Text type="body" color="secondary">
-              {`Por tipo, por hora: ${TIPOS.map(([k, nome]) => `${nome.toLowerCase()} ${numero.format(t.tipos![k] ?? 0)}`).join(' · ')}`}
-            </Text>
+            <HStack gap={3} wrap="wrap" vAlign="end">
+              {TIPOS.map(([k, nome]) => (
+                <VStack key={k} gap={0} hAlign="center">
+                  <Veiculo tipo={k as TipoVeiculo} cor={cor(p.id)} tamanho={44} gira={aoVivo && !reduzir} />
+                  <Text type="body" weight="semibold">
+                    <Contador valor={t.tipos![k] ?? 0} />
+                  </Text>
+                  <Text type="supporting" color="secondary">
+                    {`${nome.toLowerCase()}/h`}
+                  </Text>
+                </VStack>
+              ))}
+            </HStack>
           )}
         </VStack>
       )}
@@ -1724,9 +1761,12 @@ function Regiao({dados}: {dados: Dados}) {
   return (
     <VStack gap={4}>
       <VStack gap={1}>
-        <Heading level={3} accessibilityLevel={2}>
-          Agora, ponto a ponto
-        </Heading>
+        <HStack gap={2} vAlign="center">
+          <Radar />
+          <Heading level={3} accessibilityLevel={2}>
+            Agora, ponto a ponto
+          </Heading>
+        </HStack>
         <Text type="body" color="secondary">
           Últimos 15 minutos comparados com o habitual do mesmo tipo de dia e da mesma hora, na
           mesma câmera. O movimento soma os dois sentidos e diz se está subindo ou descendo em
@@ -1823,7 +1863,7 @@ function Resumo24h({dados}: {dados: Dados}) {
       <Grid columns={{minWidth: 240, repeat: 'fit'}} gap={4}>
         <MetricCard
           label="Veículos contados"
-          value={numero.format(dados.total_veiculos)}
+          value={<Contador valor={dados.total_veiculos} />}
           unidade="nas últimas 24 h"
           apoio="Câmeras somadas; o mesmo veículo pode passar por duas câmeras"
         />
@@ -1879,14 +1919,14 @@ function Resumo24h({dados}: {dados: Dados}) {
       </Grid>
 
       <Grid columns={{minWidth: 320, repeat: 'fit'}} gap={4}>
-        {dados.resumo.map((r, i) => {
+        {dados.resumo.map(r => {
           const total = Object.values(r.tipos).reduce((a, b) => a + b, 0);
           return (
             <ChartCard
               key={r.id}
               titulo={`Tipos de veículo · ${r.nome}`}
               apoio={`${numero.format(total)} veículos nas últimas 24 h.`}>
-              <TiposChart resumo={r} cor={CORES[i]} />
+              <TiposChart resumo={r} cor={cor(r.id)} />
             </ChartCard>
           );
         })}
@@ -1913,9 +1953,8 @@ function Conteudo({dados}: {dados: Dados}) {
         <Grid columns={{minWidth: 240, repeat: 'fit'}} gap={4}>
           {SENTIDOS.flatMap(s =>
             dados.resumo
-              .map((r, i) => ({r, i}))
-              .filter(({r}) => visivel(dados, r.id, s))
-              .map(({r, i}) => {
+              .filter(r => visivel(dados, r.id, s))
+              .map(r => {
                 const f = r.por_sentido?.[s]?.fluxo_h ?? null;
                 const serie = fluxos(r.id, s);
                 return (
@@ -1926,7 +1965,7 @@ function Conteudo({dados}: {dados: Dados}) {
                     unidade={f == null ? '' : 'veículos/h'}
                     apoio={`${r.nome} · média da última hora coletada${r.sentido_confirmado === false ? ' · sentido a confirmar' : ''}`}>
                     {serie.length > 1 && (
-                      <Sparkline valores={serie} cor={CORES[i]} id={`${r.id}-${s}`} />
+                      <Sparkline valores={serie} cor={cor(r.id)} id={`${r.id}-${s}`} />
                     )}
                   </MetricCard>
                 );
@@ -1936,7 +1975,7 @@ function Conteudo({dados}: {dados: Dados}) {
         <Grid columns={{minWidth: 240, repeat: 'fit'}} gap={4}>
           <MetricCard
             label="Veículos contados"
-            value={numero.format(dados.total_veiculos)}
+            value={<Contador valor={dados.total_veiculos} />}
             unidade="nas últimas 24 h"
             apoio="Câmeras somadas; o mesmo veículo pode ser contado em duas câmeras"
           />
@@ -2008,12 +2047,12 @@ function Conteudo({dados}: {dados: Dados}) {
           <DispersaoChart dados={dados} />
         </ChartCard>
         <VStack gap={4}>
-          {dados.resumo.map((r, i) => (
+          {dados.resumo.map(r => (
             <ChartCard
               key={r.id}
               titulo={`Tipos de veículo · ${r.nome}`}
               apoio="Veículos contados por tipo e participação no total da câmera.">
-              <TiposChart resumo={r} cor={CORES[i]} />
+              <TiposChart resumo={r} cor={cor(r.id)} />
             </ChartCard>
           ))}
         </VStack>
@@ -2040,11 +2079,18 @@ function Conteudo({dados}: {dados: Dados}) {
 }
 
 function Estado({dados, agora}: {dados: Dados; agora: number}) {
+  // relógio de 1 s só para a contagem até a próxima leitura (o painel busca dados a cada 60 s)
+  const [relogio, setRelogio] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setRelogio(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
   if (!dados.ultimo_clipe_utc) {
     return null;
   }
   const ultimo = new Date(dados.ultimo_clipe_utc);
   const aoVivo = agora - ultimo.getTime() < AO_VIVO_MIN * 60_000;
+  const faltam = Math.max(0, 60 - Math.floor((relogio - agora) / 1000));
   const texto = aoVivo
     ? `Coletando agora · último clipe às ${hora.format(ultimo)}`
     : `Coleta pausada · último clipe em ${diaHora.format(ultimo)}`;
@@ -2053,6 +2099,7 @@ function Estado({dados, agora}: {dados: Dados; agora: number}) {
       <StatusDot variant={aoVivo ? 'success' : 'neutral'} label={texto} isPulsing={aoVivo} />
       <Text type="supporting" color="secondary">
         {texto}
+        {aoVivo ? ` · nova leitura em ${faltam} s` : ''}
       </Text>
     </HStack>
   );
@@ -2062,6 +2109,8 @@ export default function Painel() {
   const {dados, erro, agora} = useDados();
   const sinistros = useSinistros();
   const [vista, setVista] = useState<Vista>('agora');
+  // 5 períodos não cabem por extenso em 375 px: no celular os rótulos encurtam
+  const estreito = useMediaQuery('(max-width: 480px)');
   const [foco, setFoco] = useState<FocoMapa | null>(null);
   const [filtroSin, setFiltroSin] = useState<FiltroSinistros>({gravidade: 'todos', tipo: 'todos'});
   const noMapa = Object.fromEntries(
@@ -2110,11 +2159,12 @@ export default function Painel() {
                     value={vista}
                     onChange={v => setVista(v as Vista)}
                     label="Período mostrado"
+                    size={estreito ? 'sm' : 'md'}
                     layout="fill">
                     <SegmentedControlItem value="agora" label="Agora" />
                     <SegmentedControlItem value="24h" label="24 h" />
-                    <SegmentedControlItem value="7d" label="7 dias" />
-                    <SegmentedControlItem value="30d" label="30 dias" />
+                    <SegmentedControlItem value="7d" label={estreito ? '7 d' : '7 dias'} />
+                    <SegmentedControlItem value="30d" label={estreito ? '30 d' : '30 dias'} />
                     <SegmentedControlItem value="total" label="Tudo" />
                   </SegmentedControl>
                   <Text type="body" color="secondary">

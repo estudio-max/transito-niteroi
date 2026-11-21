@@ -2,6 +2,7 @@ import {useEffect, useRef} from 'react';
 import L from 'leaflet';
 // O Leaflet precisa do próprio CSS para posicionar blocos do mapa e controles.
 import 'leaflet/dist/leaflet.css';
+import {useMovimentoReduzido} from './useVivo';
 
 export interface PontoMapa {
   id: string;
@@ -11,6 +12,7 @@ export interface PontoMapa {
   cor: string; // hex: o Leaflet escreve a cor como atributo SVG, que não lê var() do tema
   texto: string;
   alerta?: boolean; // ocorrência em andamento: contorno amarelo, a cor de dentro segue a situação
+  pulso?: boolean; // câmera contando ao vivo: um anel que se expande e some, como um sonar
 }
 
 const AMARELO_ALERTA = '#f5b400';
@@ -50,6 +52,7 @@ export default function Mapa({
   id?: string; // âncora para a página rolar até o mapa
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const reduzirMovimento = useMovimentoReduzido();
   const mapaRef = useRef<L.Map | null>(null);
   const marcasRef = useRef<Record<string, L.CircleMarker>>({});
   const camerasRef = useRef<L.LayerGroup | null>(null);
@@ -69,6 +72,10 @@ export default function Mapa({
         '&copy; <a href="https://www.openstreetmap.org/copyright">colaboradores do OpenStreetMap</a>',
       maxZoom: 19,
     }).addTo(mapa);
+    // Visual escuro do painel: inverte só as imagens do mapa (pontos e manchas, em outra
+    // camada, mantêm as cores reais). Sem chave de API, ao contrário de mapas escuros prontos.
+    mapa.getPane('tilePane')!.style.filter =
+      'invert(1) hue-rotate(180deg) brightness(0.78) contrast(0.92) saturate(0.55)';
     // Sinistros primeiro: ficam por baixo das câmeras. Cada grupo é uma camada que a pessoa
     // liga e desliga pelo controle nativo do Leaflet, no canto do mapa.
     const todas: L.CircleMarker[] = [];
@@ -102,6 +109,18 @@ export default function Mapa({
         .addTo(cameras);
       marcasRef.current[p.id] = m;
       todas.push(m);
+      if (p.pulso && !reduzirMovimento) {
+        // SVG com animação própria (nada de CSS): o anel cresce e desaparece a cada 2 s.
+        L.marker([p.lat, p.lon], {
+          interactive: false,
+          keyboard: false,
+          icon: L.divIcon({
+            className: '',
+            iconSize: [56, 56],
+            html: `<svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="10" fill="none" stroke="${p.cor}" stroke-width="2"><animate attributeName="r" values="10;26" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.9;0" dur="2s" repeatCount="indefinite"/></circle></svg>`,
+          }),
+        }).addTo(cameras);
+      }
     }
     const camadas: Record<string, L.Layer> = {};
     if (pontos.length) {
@@ -114,6 +133,14 @@ export default function Mapa({
       // aberto no computador; no celular vira um ícone que abre ao tocar, para não cobrir o mapa
       L.control.layers(undefined, camadas, {collapsed: mapa.getSize().x < 500}).addTo(mapa);
     }
+    // Controles do Leaflet no mesmo vidro escuro dos cartões (o CSS dele é claro).
+    ref.current.querySelectorAll<HTMLElement>('.leaflet-bar a, .leaflet-control-layers').forEach(el => {
+      Object.assign(el.style, {
+        background: 'rgba(8, 24, 20, 0.88)',
+        color: '#e6fff6',
+        borderColor: 'rgba(46, 230, 182, 0.35)',
+      });
+    });
     mapa.fitBounds(L.featureGroup(todas).getBounds(), {padding: [36, 36]});
     mapaRef.current = mapa;
     camerasRef.current = cameras;
@@ -123,7 +150,7 @@ export default function Mapa({
       camerasRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chave]);
+  }, [chave, reduzirMovimento]);
   useEffect(() => {
     const m = foco && marcasRef.current[foco.id];
     const mapa = mapaRef.current;
