@@ -46,6 +46,17 @@ CAMERAS = {
         "sentidos": {"sobe": "para a ponte"},  # mão única: só o sentido que existe
         "sentido_confirmado": True,
     },
+    # Ponto derivado: segunda linha sobre o mesmo clipe da 000019 (`fonte`), para a pista da
+    # direita, que o autor descreveu como do Fonseca para o Centro, o Santana ou a BR. Linha
+    # medida em 21/11/2026 pelas trajetórias de 2 clipes: em y=400 os veículos passam entre
+    # x 810 e 1033. O clipe é baixado e rastreado uma vez só; cada linha grava com seu id.
+    "000019d": {
+        "nome": "Alameda, pista para Centro e BR",
+        "fonte": "000019",
+        "linha": ((770, 400), (1090, 400)),
+        "sentidos": {"sobe": "para o Centro, Santana e BR"},  # mão única
+        "sentido_confirmado": True,
+    },
     "000021": {
         "nome": "Alameda x João Brasil",
         # 800x450. CRUZAMENTO: via horizontal no topo (y 150–230) e via diagonal (canto
@@ -71,13 +82,17 @@ CAMERAS = {
             "B": ((265, 300), (645, 300)),
         },
         "linha": ((265, 300), (645, 300)),
-        # desce = vem para a câmera, sobe = se afasta; qual é o sentido Ponte não foi conferido
-        "sentido_confirmado": False,
+        # Confirmado pelo autor em 21/11/2026 (folha de sentidos + Street View da Av.
+        # Washington Luís): o azul (vem para a câmera, pistas da esquerda) segue para Icaraí,
+        # vindo da ponte, do Barreto ou do Fonseca (caminho comum para as praias da Região
+        # Oceânica); o laranja (se afasta) vai de Icaraí para a ponte. As pistas que vão de
+        # Icaraí para o Fonseca (cinza, para cima e à esquerda na imagem) não são contadas.
+        "sentido_confirmado": True,
     },
     "000018": {
         "nome": "Jansen x Mal. Deodoro",
         "linha": ((150, 250), (799, 250)),
-        # confirmado pelo autor em 12/11/2026: lado esquerdo da imagem = da ponte para Icaraí
+        # confirmado pelo autor em 12/11/2026: lado esquerdo da imagem = para Icaraí
         "sentido_confirmado": True,
     },
 }
@@ -139,11 +154,11 @@ REGIAO = [
 ]
 
 # Em todas as câmeras da Jansen de Melo a imagem olha para a ponte: o veículo que vem
-# em direção à câmera ("desce" na imagem) vai da ponte para Icaraí; o que se afasta
-# ("sobe") vai para a ponte. Câmera de outra via tem os seus em CAMERAS[...]["sentidos"]; numa
+# em direção à câmera ("desce" na imagem) vai para Icaraí (da ponte, do Barreto ou do
+# Fonseca); o que se afasta ("sobe") vai para a ponte. Câmera de outra via tem os seus em CAMERAS[...]["sentidos"]; numa
 # via de mão única só o sentido que existe tem nome, e o outro fica fora do painel (o pouco
 # que a linha pega nele é erro do rastreador, como um veículo parado na fila).
-ROTULO_SENTIDO = {"desce": "da ponte para Icaraí", "sobe": "para a ponte"}
+ROTULO_SENTIDO = {"desce": "para Icaraí", "sobe": "para a ponte"}
 
 
 def rotulos_sentido(camera):
@@ -500,12 +515,24 @@ def coletar(db, modelo, camera, passo, nome_modelo="", detector=None):
     # clipe, passagens e movimentos na mesma transação: queda no meio não deixa clipe sem detalhe
     gravar_passagens(db, camera, clipe_utc, passagens(historico, classes, linha, fps), commit=False)
     gravar_movimentos(db, camera, clipe_utc, movimentos(trajetorias), commit=False)
+    extras = []
+    for ponto, cfg in CAMERAS.items():  # pontos derivados: outras linhas no mesmo clipe
+        if cfg.get("fonte") != camera:
+            continue
+        c = contar(trajetorias, cfg["linha"])
+        p = parametros | {"linha": str(cfg["linha"])}
+        # ponytail: a ocupação é a do quadro inteiro, igual à da fonte
+        gravar(db, ponto, clipe_utc, duracao, ocupacao, c, p, commit=False)
+        lista = passagens(historico, classes, cfg["linha"], fps)
+        gravar_passagens(db, ponto, clipe_utc, lista, commit=False)
+        extras.append(f"{ponto} {dict(c)}")
     db.commit()
     achados = incidentes.parados(historico, {t: c for t, (c, _) in trajetorias.items()}, fps)
     novos = incidentes.registrar(db, camera, clipe_utc, achados, quadros)
     for i in novos:
         print(camera, "INCIDENTE", i["tipo"], i["confianca"], i["descricao"], flush=True)
     parados = f"{len(achados)} parados" + (f", enquadramento {vista}" if vista else "")
+    parados += "".join(f", {e}" for e in extras)
     return clipe_utc, round(ocupacao, 1), dict(contagem), parados
 
 
@@ -589,6 +616,8 @@ def main():
             print("janela aberta, coletando", flush=True)
             esperando = False
         for camera, cfg in CAMERAS.items():
+            if "fonte" in cfg:  # ponto derivado: contado junto com o clipe da fonte
+                continue
             try:
                 # modelo novo por clipe: zera o rastreador entre clipes
                 r = coletar(db, YOLO(args.modelo), camera, args.passo, nome_modelo, detector)

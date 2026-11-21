@@ -370,7 +370,7 @@ def amostrar(args):
     linhas = ler_manual()
     for rodada in range(args.clipes):
         inicio = time.monotonic()
-        for camera in CAMERAS:
+        for camera in (c for c, cfg in CAMERAS.items() if "fonte" not in cfg):
             try:
                 resp, utc = abrir_clipe(camera)
                 nome = f"{camera}_{utc[:19].replace('-', '').replace(':', '')}"
@@ -670,7 +670,8 @@ def pagina_sentidos(fichas):
             "sem cruzar a linha amarela (não contados), com a seta para onde foram.</li>"
         )
         estado = "confirmado" if cfg["sentido_confirmado"] else "ainda não confirmado"
-        lat, lon = local[cam]["lat"], local[cam]["lon"]
+        lugar = local[cfg.get("fonte", cam)]  # ponto derivado fica onde está a câmera
+        lat, lon = lugar["lat"], lugar["lon"]
         blocos.append(
             f"<section><h2>{html.escape(cfg['nome'])} <small>{cam} · clipe de {hora}{enq}"
             f"</small></h2><img src='data:image/jpeg;base64,{base64.b64encode(f['jpg']).decode()}' "
@@ -705,7 +706,8 @@ def sentidos(args):
     pasta.mkdir(parents=True, exist_ok=True)
     modelo = YOLO(args.modelo)
     fichas = []
-    for camera in args.cameras or CAMERAS:
+    fontes = [c for c in args.cameras or CAMERAS if "fonte" not in CAMERAS[c]]
+    for camera in fontes:
         video = pasta / f"{camera}.mp4"
         try:
             resp, utc = abrir_clipe(camera)
@@ -719,14 +721,19 @@ def sentidos(args):
             cap.release()
             if not ok:
                 raise ValueError("clipe sem quadro legível")
-            img, n = desenhar_sentidos(quadro, linha, trajetorias)
-            jpg = cv2.imencode(".jpg", img)[1].tobytes()
-            (pasta / f"{camera}.jpg").write_bytes(jpg)
-            fichas.append(
-                {"camera": camera, "utc": utc, "enquadramento": enq, "jpg": jpg}
-                | {s: n[s] for s in (*SENTIDOS, "fora")}
-            )
-            print(camera, dict(n), flush=True)
+            # a câmera e seus pontos derivados (outras linhas no mesmo clipe)
+            pontos = [(camera, linha)] + [
+                (p, cfg["linha"]) for p, cfg in CAMERAS.items() if cfg.get("fonte") == camera
+            ]
+            for ponto, linha_p in pontos:
+                img, n = desenhar_sentidos(quadro, linha_p, trajetorias)
+                jpg = cv2.imencode(".jpg", img)[1].tobytes()
+                (pasta / f"{ponto}.jpg").write_bytes(jpg)
+                fichas.append(
+                    {"camera": ponto, "utc": utc, "enquadramento": enq, "jpg": jpg}
+                    | {s: n[s] for s in (*SENTIDOS, "fora")}
+                )
+                print(ponto, dict(n), flush=True)
         except Exception as e:  # servidor instável: segue para a próxima
             print(camera, "ERRO", repr(e), flush=True)
         finally:

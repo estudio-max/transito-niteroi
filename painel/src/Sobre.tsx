@@ -258,10 +258,11 @@ export default function Sobre() {
                 <ListItem label={<Text type="body">O vídeo é apagado. Só os números vão para o banco, que alimenta este site a cada 5 minutos.</Text>} />
               </List>
               <Text type="body" color="secondary">
-                Hoje são duas câmeras: Jansen de Melo sentido Ponte e o cruzamento
-                da Jansen de Melo com a Rua Marechal Deodoro. A segunda enxerga
-                os dois sentidos: o que vem da ponte para Icaraí e o que vai para a
-                ponte. Todo o processamento roda em um notebook comum, sem custo de
+                Hoje são quatro câmeras: duas na Jansen de Melo (sentido Ponte e o
+                cruzamento com a Rua Marechal Deodoro), que enxergam os dois sentidos,
+                o que vai para Icaraí e o que vai para a ponte, e duas na Alameda São
+                Boaventura (acesso à Ponte e cruzamento com a João Brasil), que contam
+                pistas de mão única vindas do Fonseca. Todo o processamento roda em um notebook comum, sem custo de
                 serviço.
               </Text>
             </VStack>
@@ -296,16 +297,16 @@ export default function Sobre() {
 
               <Grafico
                 titulo="Cartões de destaque"
-                mostra="Um cartão por câmera e por sentido (da ponte para Icaraí, e para a ponte), com o fluxo médio da última hora coletada em veículos por hora. A curva sob o número é o fluxo das últimas 24 horas. Dois cartões somam os veículos e os clipes do período."
-                ler="O cartão “da ponte para Icaraí” é o que mede a descida, que é o foco do estudo. A curva mostra se o momento atual está acima ou abaixo do resto do dia."
+                mostra="Um cartão por câmera e por sentido (por exemplo, para Icaraí e para a ponte), com o fluxo médio da última hora coletada em veículos por hora. A curva sob o número é o fluxo das últimas 24 horas. Dois cartões somam os veículos e os clipes do período."
+                ler="O cartão “para Icaraí” é o que mede a descida, que é o foco do estudo. A curva mostra se o momento atual está acima ou abaixo do resto do dia."
                 cuidado="Uma hora com poucos clipes (por exemplo, logo após a coleta recomeçar) gera uma média instável. Um sentido só ganha cartão quando a câmera contou pelo menos 10 veículos nele, para que contagens isoladas não pareçam fluxo. A soma de veículos conta duas vezes quem passa pelas duas câmeras."
               />
 
               <Grafico
                 titulo="Fluxo por sentido"
-                mostra="Dois gráficos, um para cada sentido: da ponte para Icaraí e para a ponte. Cada um mostra quantos veículos por hora cruzam a linha de contagem de cada câmera, em médias de 5 minutos."
+                mostra="Um gráfico para cada sentido real: para Icaraí, para a ponte, vindo do Fonseca e para o Centro, Santana e BR. Cada um mostra quantos veículos por hora cruzam a linha de contagem de cada câmera, em médias de 5 minutos."
                 ler="É a medida de capacidade da via. Uma queda brusca no horário de pico, com a ocupação subindo ao mesmo tempo, é o sinal de que a fila chegou à câmera. Os trechos sem linha são períodos sem coleta. Os sentidos ficam separados porque somar fluxos opostos esconderia o que acontece na descida."
-                cuidado="Na Jansen x Marechal Deodoro o sentido foi confirmado: o lado esquerdo da imagem vem da ponte e o direito vai para ela. Na Jansen sentido Ponte só se vê um sentido, deduzido do nome da câmera, e a confirmação ainda está pendente. O fluxo de 5 minutos é extrapolado para uma hora: variações rápidas são normais perto de semáforos, que soltam os carros em pelotões."
+                cuidado="O sentido de cada câmera foi confirmado pelo autor com uma foto das trajetórias e o Street View. Câmeras de vias diferentes só dividem um gráfico quando vão para o mesmo lugar. O fluxo de 5 minutos é extrapolado para uma hora: variações rápidas são normais perto de semáforos, que soltam os carros em pelotões."
               />
 
               <Grafico
@@ -334,7 +335,7 @@ export default function Sobre() {
                 titulo="Últimos clipes analisados"
                 mostra="Os 20 clipes mais recentes, com horário, câmera, veículos que vão para Icaraí e para a ponte, fluxo equivalente por hora (dos dois sentidos juntos) e ocupação."
                 ler="É a tabela com os números exatos que alimentam os gráficos, útil para conferir um ponto específico."
-                cuidado="A coluna de fluxo por hora soma os dois sentidos do clipe; para o fluxo por sentido, use os gráficos. O sentido da Jansen sentido Ponte ainda é deduzido do nome da câmera."
+                cuidado="A coluna de fluxo por hora soma os dois sentidos do clipe; para o fluxo por sentido, use os gráficos."
               />
             </VStack>
 

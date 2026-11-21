@@ -69,13 +69,16 @@ def test_montar_resume_a_ultima_hora_coletada():
     r18 = next(r for r in dados["resumo"] if r["id"] == "000018")
     assert (r18["clipes"], r18["ocupacao"]) == (0, None)
     assert r18["por_sentido"]["desce"] == {"fluxo_h": None, "total": 0}
-    assert dados["sentidos"]["desce"] == "da ponte para Icaraí"
+    assert dados["sentidos"]["desce"] == "para Icaraí"
     # cada câmera leva os nomes dos seus sentidos; a da Alameda não herda os da Jansen
     nomes = {c["id"]: c["sentidos"] for c in dados["cameras"]}
-    assert nomes["000018"]["desce"] == "da ponte para Icaraí"
+    assert nomes["000018"]["desce"] == "para Icaraí"
     assert nomes["000021"] == {"sobe": "vindo do Fonseca"}  # mão única
+    # ponto derivado (segunda linha no clipe da 000019) diz de qual câmera vem
+    fontes = {c["id"]: c.get("fonte") for c in dados["cameras"]}
+    assert (fontes["000019d"], fontes["000019"]) == ("000019", None)
     confirmado = {c["id"]: c["sentido_confirmado"] for c in dados["cameras"]}
-    assert (confirmado["000026"], confirmado["000018"]) == (False, True)
+    assert (confirmado["000026"], confirmado["000018"]) == (True, True)
     assert dados["validado"] is False
     assert dados["ultimos"][0]["utc"] == "2026-11-13T00:30:00+00:00"
     assert (dados["total_veiculos"], dados["total_clipes"]) == (159, 3)

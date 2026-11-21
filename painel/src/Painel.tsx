@@ -54,7 +54,15 @@ interface Camera {
   nome: string;
   sentido_confirmado?: boolean;
   sentidos?: Record<string, string>; // nomes desta câmera; sem eles, valem os gerais
+  fonte?: string; // ponto derivado: outra linha de contagem no clipe desta câmera
 }
+
+// Pontos de contagem de uma câmera da região: ela mesma e os derivados (outras linhas no
+// mesmo clipe, como a pista para Centro e BR da 000019).
+const pontosDaCamera = (dados: Dados, id: string) => [
+  id,
+  ...dados.cameras.filter(c => c.fonte === id).map(c => c.id),
+];
 
 interface PorSentido {
   fluxo_h: number | null; // última hora coletada
@@ -244,15 +252,17 @@ const porcento = new Intl.NumberFormat('pt-BR', {style: 'percent', maximumFracti
 // Cor segue a câmera (pelo id), nunca a posição numa lista. Paleta validada no fundo escuro
 // com o validador do guia de visualização (todos os pares: daltonismo e visão normal):
 // azul, laranja e água. Quatro cores juntas não passam; as duas câmeras da Alameda dividem
-// a água e se distinguem pelo traço (a 000021 tracejada) e pelo nome na legenda.
+// a água e se distinguem pelo traço (a 000021 tracejada, a pista para Centro e BR, que é a
+// segunda linha da 000019, pontilhada) e pelo nome na legenda.
 const AZUL = '#3987e5';
 const COR_CAMERA: Record<string, string> = {
   '000026': AZUL,
   '000018': '#d95926',
   '000019': '#199e70',
   '000021': '#199e70',
+  '000019d': '#199e70',
 };
-const TRACO_CAMERA: Record<string, string | undefined> = {'000021': '5 4'};
+const TRACO_CAMERA: Record<string, string | undefined> = {'000021': '5 4', '000019d': '1 3'};
 const cor = (id: string) => COR_CAMERA[id] ?? AZUL;
 const FORMAS = ['circle', 'triangle'] as const;
 const TINTA = 'var(--color-text-secondary, #4E606F)';
@@ -1331,18 +1341,25 @@ function MapaRegiao({
   // Etiquetas ao vivo: veículos por hora nos últimos 15 min, nos dois sentidos, e a tendência.
   const etiquetas: Record<string, EtiquetaMapa> = {};
   if (aoVivo) {
+    // o pino é a câmera: a etiqueta soma as linhas dela (pontos derivados entram na fonte)
     for (const [id, t] of Object.entries(dados.tendencia ?? {})) {
-      if (t.m15 != null) {
-        etiquetas[id] = {valor: t.m15, tendencia: t.direcao};
+      const fonte = dados.cameras.find(c => c.id === id)?.fonte;
+      if (t.m15 == null) continue;
+      if (fonte) {
+        if (etiquetas[fonte]) etiquetas[fonte].valor += t.m15;
+        else etiquetas[fonte] = {valor: t.m15};
+      } else {
+        etiquetas[id] = {valor: t.m15 + (etiquetas[id]?.valor ?? 0), tendencia: t.direcao};
       }
     }
   }
   // Replay das últimas 24 h: um quadro por balde de 5 min, ~75 ms cada (~20 s no total).
   const contadas = (dados.regiao ?? []).filter(p => p.contada).map(p => p.id);
-  const fluxoEm = (pt: Ponto, id: string) => {
-    const d = pt[`${id}_desce_fluxo`];
-    const s = pt[`${id}_sobe_fluxo`];
-    return d == null && s == null ? null : (d ?? 0) + (s ?? 0);
+  const fluxoEm = (pt: Ponto, camera: string) => {
+    const v = pontosDaCamera(dados, camera).flatMap(id =>
+      SENTIDOS.map(s => pt[`${id}_${s}_fluxo`]).filter((x): x is number => x != null),
+    );
+    return v.length ? v.reduce((a, b) => a + b, 0) : null;
   };
   const maximos = Object.fromEntries(
     contadas.map(id => [id, Math.max(1, ...dados.serie.map(pt => fluxoEm(pt, id) ?? 0))]),
@@ -1909,7 +1926,14 @@ function Ponto({p, dados}: {p: PontoRegiao; dados: Dados}) {
 // Só os pontos que a coleta mede de fato; os outros viram uma linha "em breve".
 function Regiao({dados}: {dados: Dados}) {
   const regiao = dados.regiao ?? [];
-  const medidos = regiao.filter(p => p.contada);
+  // cada câmera contada seguida dos seus pontos derivados, que herdam o estado dela
+  const medidos = regiao
+    .filter(p => p.contada)
+    .flatMap(p =>
+      pontosDaCamera(dados, p.id).map(id =>
+        id === p.id ? p : {...p, id, nome: dados.cameras.find(c => c.id === id)?.nome ?? id},
+      ),
+    );
   const emBreve = regiao.filter(p => !p.contada);
   if (!medidos.length) {
     return null;
@@ -2395,11 +2419,10 @@ export default function Painel() {
                 não são guardadas, só o texto da resposta.
               </Text>
               <Text type="body">
-                O fluxo é separado por sentido: na Jansen x Marechal Deodoro, o
-                lado esquerdo da imagem é o que vem da ponte para Icaraí e o
-                direito é o que vai para a ponte (sentido confirmado). A câmera
-                Jansen sentido Ponte mostra os dois sentidos; qual lado é qual
-                ainda está sendo confirmado. Os intervalos sem linha nos gráficos são períodos
+                O fluxo é separado por sentido real, com o sentido de cada câmera
+                confirmado pelo autor: nas duas câmeras da Jansen, o lado esquerdo da
+                imagem vai para Icaraí e o direito vai para a ponte; nas da Alameda,
+                cada linha conta uma pista de mão única. Os intervalos sem linha nos gráficos são períodos
                 em que a coleta não rodou. Estudo cívico independente do
                 Labs.fanara.com.br, sem vínculo com a Prefeitura de Niterói.
                 Código aberto (AGPL-3.0):{' '}

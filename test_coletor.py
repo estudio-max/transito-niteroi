@@ -220,7 +220,9 @@ def test_cameras_contadas_estao_na_regiao_e_linhas_plausiveis():
     from coletor import CAMERAS, REGIAO
 
     ids = {c["id"] for c in REGIAO}
-    assert set(CAMERAS) <= ids  # toda câmera contada existe na região monitorada
+    # toda câmera contada existe na região; ponto derivado aponta para uma câmera contada
+    assert {cfg.get("fonte", c) for c, cfg in CAMERAS.items()} <= ids
+    assert all("fonte" not in CAMERAS[cfg.get("fonte", c)] for c, cfg in CAMERAS.items())
     for cfg in CAMERAS.values():
         linhas = list(cfg.get("enquadramentos", {}).values()) + [cfg["linha"]]
         for a, b in linhas:

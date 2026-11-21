@@ -307,5 +307,12 @@ def test_pagina_sentidos_pergunta_por_camera_com_contagem_e_rotulo_atual():
     )
     assert "7 veículos que vêm em direção à câmera" in pagina
     assert "4 veículos que andaram sem cruzar a linha amarela" in pagina
-    assert "“para a ponte”" in pagina and "ainda não confirmado" in pagina
+    assert "“para a ponte”" in pagina and "Sentido confirmado" in pagina
     assert "data:image/jpeg;base64,Zm90bw==" in pagina
+
+
+def test_pagina_sentidos_aceita_ponto_derivado_e_via_de_mao_unica():
+    ficha = {"camera": "000019d", "utc": "2026-11-21T22:00:00+00:00", "enquadramento": None}
+    pagina = validar.pagina_sentidos([ficha | {"desce": 0, "sobe": 40, "fora": 9, "jpg": b""}])
+    assert "Alameda, pista para Centro e BR" in pagina
+    assert "“para o Centro, Santana e BR”" in pagina and "Fica fora do painel" in pagina

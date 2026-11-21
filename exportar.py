@@ -723,6 +723,7 @@ def montar(
                 "nome": cfg["nome"],
                 "sentido_confirmado": cfg["sentido_confirmado"],
                 "sentidos": rotulos_sentido(c),
+                **({"fonte": cfg["fonte"]} if "fonte" in cfg else {}),
             }
             for c, cfg in CAMERAS.items()
         ],
