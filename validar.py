@@ -7,10 +7,13 @@ uv run validar.py referencia                  conta os clipes com detector maior
 uv run validar.py comparar --todas --contra referencia   compara com essa referência
 uv run validar.py limpar                      apaga os vídeos já contados
 uv run validar.py enquadramento 000026 A clipe.mp4 ...   miniaturas de um enquadramento
+uv run validar.py sentidos                    foto de cada câmera para confirmar o sentido
 """
 
 import argparse
+import base64
 import csv
+import html
 import json
 import shutil
 import subprocess
@@ -21,6 +24,9 @@ from pathlib import Path
 import coletor
 from coletor import (
     CAMERAS,
+    FUSO,
+    REGIAO,
+    ROTULO_SENTIDO,
     SENTIDOS,
     VEICULOS,
     abrir_clipe,
@@ -42,6 +48,10 @@ LIMIAR = 0.10  # erro aceitável proposto; ver "Dúvidas" em REQUIREMENTS.md
 # (reação humana + a pessoa julga pelo corpo do veículo, o sistema pelo pé da caixa).
 TOLERANCIA_S = 2.0
 AMARELO = (0, 255, 255)
+# Folha de sentidos: uma cor por sentido da imagem (BGR), par legível para daltônicos.
+COR_SENTIDO = {SENTIDOS[0]: (229, 135, 57), SENTIDOS[1]: (38, 89, 217)}  # azul, laranja
+NOME_COR = {SENTIDOS[0]: "Azul", SENTIDOS[1]: "Laranja"}
+EXPLICA_SENTIDO = {SENTIDOS[0]: "vêm em direção à câmera", SENTIDOS[1]: "se afastam da câmera"}
 JANELA = "Contagem manual"
 
 # Contador manual: fileira de números = desce, fileira de letras logo abaixo = sobe.
@@ -590,6 +600,125 @@ def enquadramento(args):
     print(args.camera, args.nome, len(lista), "miniaturas em", caminho.name)
 
 
+# ---------- folha de sentidos ----------
+
+
+def sentido_de(pontos, linha):
+    """Sentido do primeiro cruzamento da trajetória com a linha (o mesmo de contar), ou None."""
+    for p0, p1 in zip(pontos, pontos[1:], strict=False):
+        if s := cruzou(p0, p1, *linha):
+            return SENTIDOS[0] if s > 0 else SENTIDOS[1]
+    return None
+
+
+def desenhar_sentidos(quadro, linha, trajetorias):
+    """Quadro escurecido com a linha de contagem e cada trajetória que a cruzou, na cor do
+    sentido e com seta no fim. Devolve (imagem, Counter de veículos por sentido)."""
+    import cv2
+    import numpy as np
+
+    img = (quadro * 0.45).astype(quadro.dtype)
+    n = Counter()
+    for _, pontos in trajetorias.values():
+        if not (s := sentido_de(pontos, linha)):
+            continue
+        n[s] += 1
+        cor, pts = COR_SENTIDO[s], [tuple(map(int, p)) for p in pontos]
+        cv2.polylines(img, [np.array(pts)], False, cor, 2, cv2.LINE_AA)
+        fim = pts[-1]
+        ini = next(
+            (p for p in reversed(pts) if np.hypot(p[0] - fim[0], p[1] - fim[1]) >= 30), pts[0]
+        )
+        comp = max(1.0, float(np.hypot(ini[0] - fim[0], ini[1] - fim[1])))
+        cv2.arrowedLine(img, ini, fim, cor, 3, cv2.LINE_AA, tipLength=min(1.0, 16 / comp))
+    a, b = (tuple(map(int, p)) for p in linha)
+    cv2.line(img, a, b, AMARELO, 2, cv2.LINE_AA)
+    return img, n
+
+
+def pagina_sentidos(fichas):
+    """HTML local com a foto de cada câmera (embutida, a página abre sozinha em qualquer
+    lugar) e a pergunta: para onde vai cada cor?"""
+    from datetime import datetime
+
+    local = {p["id"]: p for p in REGIAO}
+    blocos = []
+    for f in fichas:
+        cam, cfg = f["camera"], CAMERAS[f["camera"]]
+        hora = datetime.fromisoformat(f["utc"]).astimezone(FUSO).strftime("%d/%m %H:%M")
+        enq = f" · enquadramento {f['enquadramento']}" if f["enquadramento"] else ""
+        cores = "".join(
+            f'<li><b style="color:#{"".join(f"{c:02x}" for c in COR_SENTIDO[s][::-1])}">'
+            f"{NOME_COR[s]}</b>: "
+            f"{f[s]} veículos que {EXPLICA_SENTIDO[s]} (no sistema, “{s}”). "
+            f"Hoje o painel chama de “{ROTULO_SENTIDO[s]}”.</li>"
+            for s in SENTIDOS
+        )
+        estado = "confirmado" if cfg["sentido_confirmado"] else "ainda não confirmado"
+        lat, lon = local[cam]["lat"], local[cam]["lon"]
+        blocos.append(
+            f"<section><h2>{html.escape(cfg['nome'])} <small>{cam} · clipe de {hora}{enq}"
+            f"</small></h2><img src='data:image/jpeg;base64,{base64.b64encode(f['jpg']).decode()}' "
+            f"alt='Quadro da câmera {cam} "
+            f"com as trajetórias coloridas'><ul>{cores}</ul><p>Sentido {estado}. "
+            f"<a href='https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=18/{lat}/{lon}'>"
+            "Ver o local no mapa</a> (posição aproximada).</p></section>"
+        )
+    return (
+        "<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Sentidos das câmeras</title><style>"
+        "body{background:#040b09;color:#e6fff6;font:16px/1.5 system-ui,sans-serif;"
+        "max-width:900px;margin:0 auto;padding:16px}h2{font-size:20px;margin:32px 0 8px}"
+        "small{color:#9fc4b8;font-weight:400;font-size:14px}img{width:100%;border-radius:3px}"
+        "a{color:#2ee6b6}li{margin:4px 0}</style></head><body>"
+        "<h1>Para onde vai cada cor?</h1><p>Cada linha é um veículo que cruzou a linha amarela "
+        "de contagem no último clipe; a seta aponta para onde ele foi. Responda por câmera: "
+        "“certo”, “invertido” ou para onde vão o azul e o laranja (por exemplo, "
+        "“azul vai para a ponte”).</p>" + "".join(blocos) + "</body></html>"
+    )
+
+
+def sentidos(args):
+    """Baixa o clipe atual de cada câmera, desenha as trajetórias que cruzaram a linha e
+    monta validacao/sentidos/index.html. O vídeo é apagado; fica só o quadro desenhado."""
+    import cv2
+    from ultralytics import YOLO
+
+    pasta = PASTA / "sentidos"
+    pasta.mkdir(parents=True, exist_ok=True)
+    modelo = YOLO(args.modelo)
+    fichas = []
+    for camera in args.cameras or CAMERAS:
+        video = pasta / f"{camera}.mp4"
+        try:
+            resp, utc = abrir_clipe(camera)
+            with resp:
+                video.write_bytes(resp.read())
+            linha, enq, _ = linha_do_clipe(camera, video)
+            trajetorias, _, _ = rastrear(video, modelo, 1, **CONFIGS["permissivo960"])
+            cap = cv2.VideoCapture(str(video))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) // 2)
+            ok, quadro = cap.read()
+            cap.release()
+            if not ok:
+                raise ValueError("clipe sem quadro legível")
+            img, n = desenhar_sentidos(quadro, linha, trajetorias)
+            jpg = cv2.imencode(".jpg", img)[1].tobytes()
+            (pasta / f"{camera}.jpg").write_bytes(jpg)
+            fichas.append(
+                {"camera": camera, "utc": utc, "enquadramento": enq, "jpg": jpg}
+                | {s: n[s] for s in SENTIDOS}
+            )
+            print(camera, dict(n), flush=True)
+        except Exception as e:  # servidor instável: segue para a próxima
+            print(camera, "ERRO", repr(e), flush=True)
+        finally:
+            video.unlink(missing_ok=True)
+    (pasta / "index.html").write_text(pagina_sentidos(fichas), encoding="utf-8")
+    print("abra", (pasta / "index.html").resolve())
+
+
 def limpar(_args):
     """Apaga os vídeos dos clipes já contados; os números ficam nos CSV."""
     for linha in filter(contada, ler_manual()):
@@ -629,6 +758,10 @@ def main():
     e.add_argument("clipes", nargs="+", help="vídeos .mp4 desse enquadramento")
     e.set_defaults(func=enquadramento)
     sub.add_parser("limpar", help="apaga vídeos já contados").set_defaults(func=limpar)
+    t = sub.add_parser("sentidos", help="foto de cada câmera com as trajetórias por sentido")
+    t.add_argument("cameras", nargs="*", help="padrão: todas as câmeras contadas")
+    t.add_argument("--modelo", default="yolo11s.pt")
+    t.set_defaults(func=sentidos)
     args = ap.parse_args()
     args.func(args)
 

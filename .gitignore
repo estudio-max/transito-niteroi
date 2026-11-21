@@ -28,3 +28,6 @@ painel/public/texto.html
 *.db-shm
 *.db-journal
 _frame_*.png
+
+# folha de sentidos (validar.py sentidos): quadros das câmeras, só para uso local
+validacao/sentidos/

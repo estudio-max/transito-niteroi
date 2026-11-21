@@ -61,6 +61,7 @@ O coletor chama `parados` e `registrar` depois de gravar a contagem do clipe, en
 | `comparar` / `_rodar` | Roda uma configuração do detector, ou as três de `CONFIGS` com `--todas`, sobre os clipes contados; grava `resultado_*.csv` e `divergencias_*.csv` por configuração e imprime uma tabela única |
 | `referencia` | Conta todos os clipes guardados com um detector mais forte (padrão `yolo11x` a 1280 px) e grava o resultado no formato da contagem manual. `comparar --contra referencia` usa esses arquivos no lugar de `manual.csv`. Mede quanto a contagem muda com mais modelo e resolução, não o erro real |
 | `limpar` | Apaga os vídeos dos clipes já contados |
+| `sentidos` / `desenhar_sentidos` / `sentido_de` / `pagina_sentidos` | Folha para confirmar o sentido real de cada câmera: baixa o clipe atual, rastreia com a configuração do coletor, desenha num quadro as trajetórias que cruzaram a linha (azul = desce, laranja = sobe, com seta) e monta `validacao/sentidos/index.html` com as fotos embutidas, a contagem por cor e o rótulo que o painel usa hoje. Apaga o vídeo. `sentido_de` usa o mesmo primeiro cruzamento de `coletor.contar` |
 
 Arquivos em `validacao/` (CSV com `;`, abrem no Excel):
 

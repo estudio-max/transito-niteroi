@@ -136,6 +136,14 @@ uv run validar.py limpar
 
 Se uma câmera mudar de enquadramento (a 000026 alterna entre dois), guarde miniaturas do novo enquadramento com `uv run validar.py enquadramento <câmera> <nome> <clipes.mp4>` e acrescente a linha dele em `CAMERAS` (`enquadramentos`, em `coletor.py`). O log do coletor avisa `ENQUADRAMENTO INCERTO` quando um clipe não se parece com nenhum.
 
+Para confirmar o sentido real de cada câmera (ou conferir uma linha de contagem nova), gere a folha de sentidos:
+
+```bash
+uv run validar.py sentidos            # ou só algumas: uv run validar.py sentidos 000019 000026
+```
+
+Ela baixa o clipe atual de cada câmera contada, roda o mesmo detector do coletor e grava `validacao/sentidos/index.html`: um quadro escurecido de cada câmera com a linha amarela e, por cima, a trajetória de cada veículo que a cruzou, em azul ("desce", vem para a câmera) ou laranja ("sobe", se afasta), com seta no fim. Basta dizer para onde vai cada cor. O vídeo é apagado; o quadro fica só na sua máquina (a pasta está no `.gitignore`).
+
 ## Verificações (rodar antes de qualquer commit)
 
 ```bash

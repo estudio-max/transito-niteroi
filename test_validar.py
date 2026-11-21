@@ -264,3 +264,44 @@ def test_banco_guarda_parametros_e_migra_banco_antigo(tmp_path):
     db = abrir_banco(caminho)
     gravar(db, "000026", "t1", 60, 2.0, Counter(), {"modelo": "m", "passo": "2", "linha": "L"})
     assert db.execute("SELECT modelo, passo, linha FROM clipes").fetchone() == ("m", "2", "L")
+
+
+def test_sentido_de_segue_o_primeiro_cruzamento():
+    linha = ((0, 50), (100, 50))
+    assert validar.sentido_de([(50, 10), (50, 90)], linha) == "desce"
+    assert validar.sentido_de([(50, 90), (50, 10), (50, 90)], linha) == "sobe"
+    assert validar.sentido_de([(50, 10), (60, 20)], linha) is None
+
+
+def test_desenhar_sentidos_pinta_cada_sentido_com_sua_cor_e_ignora_quem_nao_cruzou():
+    import numpy as np
+
+    quadro = np.zeros((100, 200, 3), np.uint8)
+    trajetorias = {
+        1: ("carro", [(40, 10), (40, 50), (40, 90)]),  # desce
+        2: ("carro", [(160, 90), (160, 50), (160, 10)]),  # sobe
+        3: ("moto", [(100, 10), (110, 20)]),  # não cruza
+    }
+    img, n = validar.desenhar_sentidos(quadro, ((0, 60), (199, 60)), trajetorias)
+    assert n == Counter(desce=1, sobe=1)
+    assert tuple(img[30, 40]) == validar.COR_SENTIDO["desce"]
+    assert tuple(img[30, 160]) == validar.COR_SENTIDO["sobe"]
+    assert not img[15, 105].any()
+
+
+def test_pagina_sentidos_pergunta_por_camera_com_contagem_e_rotulo_atual():
+    ficha = {
+        "camera": "000026",
+        "utc": "2026-11-21T21:30:00+00:00",
+        "enquadramento": "A",
+        "desce": 7,
+        "sobe": 3,
+        "jpg": b"foto",
+    }
+    pagina = validar.pagina_sentidos([ficha])
+    assert (
+        "Jansen sent. Ponte" in pagina and "21/11 18:30" in pagina and "enquadramento A" in pagina
+    )
+    assert "7 veículos que vêm em direção à câmera" in pagina
+    assert "“para a ponte”" in pagina and "ainda não confirmado" in pagina
+    assert "data:image/jpeg;base64,Zm90bw==" in pagina
