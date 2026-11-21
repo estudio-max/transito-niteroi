@@ -273,20 +273,22 @@ def test_sentido_de_segue_o_primeiro_cruzamento():
     assert validar.sentido_de([(50, 10), (60, 20)], linha) is None
 
 
-def test_desenhar_sentidos_pinta_cada_sentido_com_sua_cor_e_ignora_quem_nao_cruzou():
+def test_desenhar_sentidos_pinta_cada_sentido_e_deixa_em_cinza_quem_andou_sem_cruzar():
     import numpy as np
 
     quadro = np.zeros((100, 200, 3), np.uint8)
     trajetorias = {
         1: ("carro", [(40, 10), (40, 50), (40, 90)]),  # desce
         2: ("carro", [(160, 90), (160, 50), (160, 10)]),  # sobe
-        3: ("moto", [(100, 10), (110, 20)]),  # não cruza
+        3: ("carro", [(10, 30), (110, 30)]),  # andou 100 px sem cruzar: cinza
+        4: ("moto", [(100, 80), (110, 90)]),  # quase parado: some
     }
     img, n = validar.desenhar_sentidos(quadro, ((0, 60), (199, 60)), trajetorias)
-    assert n == Counter(desce=1, sobe=1)
-    assert tuple(img[30, 40]) == validar.COR_SENTIDO["desce"]
-    assert tuple(img[30, 160]) == validar.COR_SENTIDO["sobe"]
-    assert not img[15, 105].any()
+    assert n == Counter(desce=1, sobe=1, fora=1)
+    assert tuple(img[75, 40]) == validar.COR_SENTIDO["desce"]
+    assert tuple(img[75, 160]) == validar.COR_SENTIDO["sobe"]
+    assert tuple(img[30, 70]) == validar.CINZA
+    assert not img[85, 105].any()
 
 
 def test_pagina_sentidos_pergunta_por_camera_com_contagem_e_rotulo_atual():
@@ -296,6 +298,7 @@ def test_pagina_sentidos_pergunta_por_camera_com_contagem_e_rotulo_atual():
         "enquadramento": "A",
         "desce": 7,
         "sobe": 3,
+        "fora": 4,
         "jpg": b"foto",
     }
     pagina = validar.pagina_sentidos([ficha])
@@ -303,5 +306,6 @@ def test_pagina_sentidos_pergunta_por_camera_com_contagem_e_rotulo_atual():
         "Jansen sent. Ponte" in pagina and "21/11 18:30" in pagina and "enquadramento A" in pagina
     )
     assert "7 veículos que vêm em direção à câmera" in pagina
+    assert "4 veículos que andaram sem cruzar a linha amarela" in pagina
     assert "“para a ponte”" in pagina and "ainda não confirmado" in pagina
     assert "data:image/jpeg;base64,Zm90bw==" in pagina

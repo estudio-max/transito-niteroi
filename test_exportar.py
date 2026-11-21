@@ -70,6 +70,10 @@ def test_montar_resume_a_ultima_hora_coletada():
     assert (r18["clipes"], r18["ocupacao"]) == (0, None)
     assert r18["por_sentido"]["desce"] == {"fluxo_h": None, "total": 0}
     assert dados["sentidos"]["desce"] == "da ponte para Icaraí"
+    # cada câmera leva os nomes dos seus sentidos; a da Alameda não herda os da Jansen
+    nomes = {c["id"]: c["sentidos"] for c in dados["cameras"]}
+    assert nomes["000018"]["desce"] == "da ponte para Icaraí"
+    assert nomes["000019"]["desce"] == "vindo da ponte"
     confirmado = {c["id"]: c["sentido_confirmado"] for c in dados["cameras"]}
     assert (confirmado["000026"], confirmado["000018"]) == (False, True)
     assert dados["validado"] is False

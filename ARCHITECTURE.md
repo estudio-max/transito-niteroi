@@ -61,7 +61,7 @@ O coletor chama `parados` e `registrar` depois de gravar a contagem do clipe, en
 | `comparar` / `_rodar` | Roda uma configuração do detector, ou as três de `CONFIGS` com `--todas`, sobre os clipes contados; grava `resultado_*.csv` e `divergencias_*.csv` por configuração e imprime uma tabela única |
 | `referencia` | Conta todos os clipes guardados com um detector mais forte (padrão `yolo11x` a 1280 px) e grava o resultado no formato da contagem manual. `comparar --contra referencia` usa esses arquivos no lugar de `manual.csv`. Mede quanto a contagem muda com mais modelo e resolução, não o erro real |
 | `limpar` | Apaga os vídeos dos clipes já contados |
-| `sentidos` / `desenhar_sentidos` / `sentido_de` / `pagina_sentidos` | Folha para confirmar o sentido real de cada câmera: baixa o clipe atual, rastreia com a configuração do coletor, desenha num quadro as trajetórias que cruzaram a linha (azul = desce, laranja = sobe, com seta) e monta `validacao/sentidos/index.html` com as fotos embutidas, a contagem por cor e o rótulo que o painel usa hoje. Apaga o vídeo. `sentido_de` usa o mesmo primeiro cruzamento de `coletor.contar` |
+| `sentidos` / `desenhar_sentidos` / `sentido_de` / `pagina_sentidos` | Folha para confirmar o sentido real de cada câmera: baixa o clipe atual, rastreia com a configuração do coletor, desenha num quadro as trajetórias que cruzaram a linha (azul = desce, laranja = sobe, com seta) e, em cinza por baixo, as que andaram sem cruzar e monta `validacao/sentidos/index.html` com as fotos embutidas, a contagem por cor e o rótulo que o painel usa hoje. Apaga o vídeo. `sentido_de` usa o mesmo primeiro cruzamento de `coletor.contar` |
 
 Arquivos em `validacao/` (CSV com `;`, abrem no Excel):
 
@@ -86,7 +86,7 @@ flowchart LR
 ```
 
 - `exportar.py`: `ler` (banco), `agregar` (baldes de 5 min por câmera e **por sentido**, com buracos onde não houve coleta), `cobertura` (minutos por dia e hora), `montar` (resumo por câmera e sentido, totais, tipos de veículo, dispersão, últimos 20 clipes), `ler_ocorrencias` (incidentes publicáveis das últimas 24 h, deduplicados por câmera e início), `exportar` (grava e, opcionalmente, envia por `scp`). O `config` de um clipe — modelo, detector, linha e `passo` quando ≠ 1 — separa as séries do habitual e da tendência.
-- Sentidos: `CAMERAS[...]["sentido_confirmado"]` e `ROTULO_SENTIDO` em `coletor.py` são a fonte única; o painel lê os rótulos de `dados.json` e só mostra um sentido de uma câmera se ela contou ao menos 10 veículos nele (`MIN_TOTAL`).
+- Sentidos: `CAMERAS[...]["sentido_confirmado"]`, `CAMERAS[...]["sentidos"]` (nomes por câmera, via `rotulos_sentido`) e `ROTULO_SENTIDO` (nomes da Jansen, padrão) em `coletor.py` são a fonte única; `dados.json` leva os nomes em cada câmera; o painel lê os rótulos de `dados.json` e só mostra um sentido de uma câmera se ela contou ao menos 10 veículos nele (`MIN_TOTAL`).
 - `painel/`: Vite + React 19 + Astryx (`@astryxdesign/core`, tema neutro) + Recharts. Página única em `src/Painel.tsx`, a partir do modelo `dashboard` do Astryx. Sem backend: lê `dados.json` do mesmo servidor.
 - Hospedagem: pasta `~/transito.fanara.com.br` na HostGator, acesso pelo alias SSH `hostgator-fanara` (chave local; nenhuma credencial no repositório).
 - O coletor com `--publicar` chama `exportar` a cada 5 minutos; falha de envio não derruba a coleta.

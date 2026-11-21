@@ -142,7 +142,7 @@ Para confirmar o sentido real de cada câmera (ou conferir uma linha de contagem
 uv run validar.py sentidos            # ou só algumas: uv run validar.py sentidos 000019 000026
 ```
 
-Ela baixa o clipe atual de cada câmera contada, roda o mesmo detector do coletor e grava `validacao/sentidos/index.html`: um quadro escurecido de cada câmera com a linha amarela e, por cima, a trajetória de cada veículo que a cruzou, em azul ("desce", vem para a câmera) ou laranja ("sobe", se afasta), com seta no fim. Basta dizer para onde vai cada cor. O vídeo é apagado; o quadro fica só na sua máquina (a pasta está no `.gitignore`).
+Ela baixa o clipe atual de cada câmera contada, roda o mesmo detector do coletor e grava `validacao/sentidos/index.html`: um quadro escurecido de cada câmera com a linha amarela e, por cima, a trajetória de cada veículo que a cruzou, em azul ("desce", vem para a câmera) ou laranja ("sobe", se afasta), com seta no fim; os veículos que andaram sem cruzar a linha ficam em cinza, o que mostra as vias que ela não pega. Basta dizer para onde vai cada cor. Os nomes confirmados vão em `CAMERAS[...]["sentidos"]` (`coletor.py`). O vídeo é apagado; o quadro fica só na sua máquina (a pasta está no `.gitignore`).
 
 ## Verificações (rodar antes de qualquer commit)
 

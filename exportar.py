@@ -22,6 +22,7 @@ from coletor import (
     SENTIDOS,
     VEICULOS,
     criar_tabela_estado,
+    rotulos_sentido,
 )
 from historia import criar_tabela_clima
 from incidentes import PUBLICAVEIS
@@ -717,7 +718,12 @@ def montar(
         "validado": False,  # só muda quando a fase 2 (validação) fechar
         "balde_min": BALDE_MIN,
         "cameras": [
-            {"id": c, "nome": cfg["nome"], "sentido_confirmado": cfg["sentido_confirmado"]}
+            {
+                "id": c,
+                "nome": cfg["nome"],
+                "sentido_confirmado": cfg["sentido_confirmado"],
+                "sentidos": rotulos_sentido(c),
+            }
             for c, cfg in CAMERAS.items()
         ],
         "sentidos": ROTULO_SENTIDO,

@@ -51,6 +51,7 @@ AMARELO = (0, 255, 255)
 # Folha de sentidos: uma cor por sentido da imagem (BGR), par legível para daltônicos.
 COR_SENTIDO = {SENTIDOS[0]: (229, 135, 57), SENTIDOS[1]: (38, 89, 217)}  # azul, laranja
 NOME_COR = {SENTIDOS[0]: "Azul", SENTIDOS[1]: "Laranja"}
+CINZA = (190, 190, 190)  # veículos que andaram sem cruzar a linha
 EXPLICA_SENTIDO = {SENTIDOS[0]: "vêm em direção à câmera", SENTIDOS[1]: "se afastam da câmera"}
 JANELA = "Contagem manual"
 
@@ -611,26 +612,33 @@ def sentido_de(pontos, linha):
     return None
 
 
-def desenhar_sentidos(quadro, linha, trajetorias):
-    """Quadro escurecido com a linha de contagem e cada trajetória que a cruzou, na cor do
-    sentido e com seta no fim. Devolve (imagem, Counter de veículos por sentido)."""
+def desenhar_sentidos(quadro, linha, trajetorias, minimo=60):
+    """Quadro escurecido com a linha de contagem e as trajetórias com seta no fim: as que
+    cruzaram a linha na cor do sentido; as outras que andaram ao menos `minimo` px, em cinza,
+    por baixo (mostram as vias que a linha não pega). Devolve (imagem, Counter com os dois
+    sentidos e "fora", os veículos que se moveram sem cruzar a linha)."""
     import cv2
     import numpy as np
 
     img = (quadro * 0.45).astype(quadro.dtype)
-    n = Counter()
+    n, desenhos = Counter(), []
     for _, pontos in trajetorias.values():
-        if not (s := sentido_de(pontos, linha)):
-            continue
-        n[s] += 1
-        cor, pts = COR_SENTIDO[s], [tuple(map(int, p)) for p in pontos]
-        cv2.polylines(img, [np.array(pts)], False, cor, 2, cv2.LINE_AA)
+        pts = [tuple(map(int, p)) for p in pontos]
+        s = sentido_de(pontos, linha)
+        if not s and (len(pts) < 2 or np.hypot(*np.subtract(pts[-1], pts[0])) < minimo):
+            continue  # parado ou ruído do rastreador
+        n[s or "fora"] += 1
+        desenhos.append((s is not None, COR_SENTIDO.get(s, CINZA), pts))
+    for contado, cor, pts in sorted(desenhos, key=lambda d: d[0]):  # cinza por baixo
+        cv2.polylines(img, [np.array(pts)], False, cor, 2 if contado else 1, cv2.LINE_AA)
         fim = pts[-1]
         ini = next(
             (p for p in reversed(pts) if np.hypot(p[0] - fim[0], p[1] - fim[1]) >= 30), pts[0]
         )
         comp = max(1.0, float(np.hypot(ini[0] - fim[0], ini[1] - fim[1])))
-        cv2.arrowedLine(img, ini, fim, cor, 3, cv2.LINE_AA, tipLength=min(1.0, 16 / comp))
+        cv2.arrowedLine(
+            img, ini, fim, cor, 3 if contado else 2, cv2.LINE_AA, tipLength=min(1.0, 16 / comp)
+        )
     a, b = (tuple(map(int, p)) for p in linha)
     cv2.line(img, a, b, AMARELO, 2, cv2.LINE_AA)
     return img, n
@@ -653,6 +661,9 @@ def pagina_sentidos(fichas):
             f"{f[s]} veículos que {EXPLICA_SENTIDO[s]} (no sistema, “{s}”). "
             f"Hoje o painel chama de “{ROTULO_SENTIDO[s]}”.</li>"
             for s in SENTIDOS
+        ) + (
+            f"<li><b style='color:#bebebe'>Cinza</b>: {f.get('fora', 0)} veículos que andaram "
+            "sem cruzar a linha amarela (não contados), com a seta para onde foram.</li>"
         )
         estado = "confirmado" if cfg["sentido_confirmado"] else "ainda não confirmado"
         lat, lon = local[cam]["lat"], local[cam]["lon"]
@@ -672,8 +683,9 @@ def pagina_sentidos(fichas):
         "max-width:900px;margin:0 auto;padding:16px}h2{font-size:20px;margin:32px 0 8px}"
         "small{color:#9fc4b8;font-weight:400;font-size:14px}img{width:100%;border-radius:3px}"
         "a{color:#2ee6b6}li{margin:4px 0}</style></head><body>"
-        "<h1>Para onde vai cada cor?</h1><p>Cada linha é um veículo que cruzou a linha amarela "
-        "de contagem no último clipe; a seta aponta para onde ele foi. Responda por câmera: "
+        "<h1>Para onde vai cada cor?</h1><p>Cada linha é um veículo do último clipe, com a seta "
+        "para onde ele foi: azul e laranja cruzaram a linha amarela de contagem; cinza andou "
+        "sem cruzar (mostra as vias que a linha não pega). Responda por câmera: "
         "“certo”, “invertido” ou para onde vão o azul e o laranja (por exemplo, "
         "“azul vai para a ponte”).</p>" + "".join(blocos) + "</body></html>"
     )
@@ -708,7 +720,7 @@ def sentidos(args):
             (pasta / f"{camera}.jpg").write_bytes(jpg)
             fichas.append(
                 {"camera": camera, "utc": utc, "enquadramento": enq, "jpg": jpg}
-                | {s: n[s] for s in SENTIDOS}
+                | {s: n[s] for s in (*SENTIDOS, "fora")}
             )
             print(camera, dict(n), flush=True)
         except Exception as e:  # servidor instável: segue para a próxima

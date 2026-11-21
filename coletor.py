@@ -39,9 +39,12 @@ CAMERAS = {
         # 1280x720 (as outras duas são 800x450). Linha PROVISÓRIA (21/11/2026), calibrada por
         # rastreamento automático, SEM conferência visual: a via desce/sobe no lado esquerdo
         # do quadro (pés dos veículos em x 20..710), com o cruzamento no topo (y<320).
-        # Confirmar olhando um quadro antes de usar o número; sentido ainda não conferido.
+        # Folha de sentidos de 21/11/2026: a linha só cruza a rampa da esquerda, e o autor
+        # confirmou que ela leva quem vem do Fonseca pela Alameda e sobe a ponte. A pista da
+        # direita (do Fonseca para o Centro, o Santana ou a BR) não é contada: pede outra linha.
         "linha": ((30, 400), (710, 400)),
-        "sentido_confirmado": False,
+        "sentidos": {"desce": "vindo da ponte", "sobe": "para a ponte"},
+        "sentido_confirmado": True,
     },
     "000021": {
         "nome": "Alameda x João Brasil",
@@ -49,6 +52,8 @@ CAMERAS = {
         # inferior direito → topo). A linha única só pega a via vertical/diagonal; o fluxo
         # completo (por direção) fica na tabela movimentos (RF6). Linha PROVISÓRIA (21/11).
         "linha": ((600, 300), (790, 300)),
+        # Folha de sentidos de 21/11/2026: o autor leu o laranja (se afasta) como a saída da
+        # ponte mais quem vem do Ponto Cem Réis, indo para o Fonseca, mas ainda tem dúvida.
         "sentido_confirmado": False,
     },
     "000026": {
@@ -132,8 +137,14 @@ REGIAO = [
 
 # Em todas as câmeras da Jansen de Melo a imagem olha para a ponte: o veículo que vem
 # em direção à câmera ("desce" na imagem) vai da ponte para Icaraí; o que se afasta
-# ("sobe") vai para a ponte.
+# ("sobe") vai para a ponte. Câmera de outra via tem os seus em CAMERAS[...]["sentidos"].
 ROTULO_SENTIDO = {"desce": "da ponte para Icaraí", "sobe": "para a ponte"}
+
+
+def rotulos_sentido(camera):
+    """Para onde vai cada sentido da imagem nesta câmera ({"desce": ..., "sobe": ...})."""
+    return CAMERAS[camera].get("sentidos", ROTULO_SENTIDO)
+
 
 COLUNAS = [f"{v}_{s}" for v in VEICULOS.values() for s in SENTIDOS]
 PARAMETROS = ["modelo", "passo", "linha", "detector"]
